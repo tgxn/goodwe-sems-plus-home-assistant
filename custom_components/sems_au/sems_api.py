@@ -591,6 +591,30 @@ class SemsApi:
         _LOGGER.debug("SEMS MQTT configuration: %s", redact_for_log(config))
         return config
 
+    def enableSecondData(
+        self, powerStationId: str, renewToken: bool = False, maxTokenRetries: int = 2
+    ) -> bool:
+        """Enable second-data (MQTT live updates) for a power station."""
+        result = self._make_api_call(
+            f"/sems-plant/api/second-data/enable?stationId={powerStationId}",
+            method="GET",
+            renewToken=renewToken,
+            maxTokenRetries=maxTokenRetries,
+            operation_name="enableSecondData API call",
+            is_web=True,
+        )
+        if isinstance(result, dict) and result.get("code") in (0, "0", "00000"):
+            _LOGGER.debug(
+                "Second-data enabled for station %s", redact_for_log(powerStationId)
+            )
+            return True
+        _LOGGER.warning(
+            "Failed to enable second-data for station %s: %s",
+            redact_for_log(powerStationId),
+            redact_for_log(result),
+        )
+        return False
+
     def getEnergyStorageIntegratedCabinets(
         self,
         powerStationId: str,

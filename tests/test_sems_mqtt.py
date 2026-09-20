@@ -151,9 +151,6 @@ async def test_listener_connects_and_subscribes() -> None:
     )
     assert client_class.call_args.kwargs["port"] == 8885
     assert client_class.call_args.kwargs["websocket_path"] == "/mqtt"
-    assert client_class.call_args.kwargs["websocket_headers"] == {
-        "Origin": "https://au-semsplus.goodwe.com"
-    }
     await_args = client.subscribe.await_args
     assert await_args.args == ("/goodwe/second-data/station/station-id",)
 

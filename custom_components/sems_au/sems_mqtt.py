@@ -261,6 +261,15 @@ class SemsMqttListener:
                 self._connection_state = "connecting"
                 _LOGGER.debug("Attempting to connect to SEMS MQTT broker...")
 
+                # Extract station_id from topic: /goodwe/second-data/station/{station_id}
+                station_id = self._topic.split("/")[-1]
+
+                # Enable second-data to activate MQTT live updates for the station
+                await self._hass.async_add_executor_job(
+                    self._api.enableSecondData,
+                    station_id,
+                )
+
                 config_data = await self._hass.async_add_executor_job(
                     self._api.getMqttConfig
                 )
@@ -277,7 +286,7 @@ class SemsMqttListener:
                 try:
                     await self._hass.async_add_executor_job(
                         self._api.getData,
-                        self._topic.split("/")[-1],  # Extract station_id from topic
+                        station_id,
                     )
                     _LOGGER.debug(
                         "Session warm-up complete, MQTT broker should recognize us"
