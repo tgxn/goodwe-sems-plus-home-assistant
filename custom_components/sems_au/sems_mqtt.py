@@ -19,16 +19,13 @@ from .const import (
     DEFAULT_SEMS_REGION,
     SEMS_REGIONS,
     redact_for_log,
-    redact_text,
 )
 from .sems_api import SemsApi
 
 _LOGGER = logging.getLogger(__name__)
 
 # Dedicated logger passed to aiomqtt/paho-mqtt so the raw MQTT wire protocol
-# (CONNECT/CONNACK, SUBSCRIBE/SUBACK, PUBLISH, PINGREQ/PINGRESP) is visible at
-# DEBUG level. paho-mqtt's enable_logger() only wires up whatever logger
-# object it is given, so this must be passed explicitly to aiomqtt.Client.
+
 _PROTOCOL_LOGGER = _LOGGER.getChild("protocol")
 _PROTOCOL_LOGGER.setLevel(logging.DEBUG)
 
@@ -37,14 +34,14 @@ _MAX_RECONNECT_DELAY = 60
 
 
 class _RedactStationIdFilter(logging.Filter):
-    """Redact station IDs embedded in paho-mqtt's raw protocol log lines."""
+    """Redact station IDs and sensitive data from paho-mqtt's protocol log lines."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Collapse args into msg and redact any embedded station ID."""
+        """Collapse args into msg and redact sensitive data."""
         if record.args:
             record.msg = record.getMessage()
             record.args = ()
-        record.msg = redact_text(str(record.msg))
+        record.msg = redact_for_log(record.msg)
         return True
 
 
@@ -166,6 +163,7 @@ def normalize_mqtt_powerflow_payload(payload: Any) -> dict[str, Any] | None:
         return None
 
     normalized: dict[str, Any] = {"source": "mqtt"}
+    # `message` telemetry fields are reported in kW and normalized to W here.
     mappings = {
         "pSystem": ("pv", _kw_to_watts),
         "pConsum": ("load", _kw_to_watts),
@@ -216,6 +214,7 @@ class SemsMqttListener:
         """Initialize the listener."""
         self._hass = hass
         self._api = api
+        self._station_id = station_id
         self._topic = f"/goodwe/second-data/station/{station_id}"
         self._region = region
         self._message_handler = message_handler
@@ -254,26 +253,31 @@ class SemsMqttListener:
         """Return the timestamp of the last successful MQTT message."""
         return self._last_update_time
 
+    async def _async_get_connection_config(self) -> SemsMqttConfig:
+        """Enable station second-data and fetch MQTT connection config."""
+        enabled = await self._hass.async_add_executor_job(
+            self._api.enableSecondData,
+            self._station_id,
+        )
+        if not enabled:
+            raise ValueError("SEMS second-data enable call failed")
+
+        config_data = await self._hass.async_add_executor_job(self._api.getMqttConfig)
+        return SemsMqttConfig.from_api(config_data, self._region)
+
     async def async_run(self) -> None:
         """Connect and listen until stopped or cancelled."""
+        # connection loop: fetch config, connect websocket, then backoff on failure.
         while not self._stop_event.is_set():
+            config: SemsMqttConfig | None = None
             try:
                 self._connection_state = "connecting"
-                _LOGGER.debug("Attempting to connect to SEMS MQTT broker...")
-
-                # Extract station_id from topic: /goodwe/second-data/station/{station_id}
-                station_id = self._topic.split("/")[-1]
-
-                # Enable second-data to activate MQTT live updates for the station
-                await self._hass.async_add_executor_job(
-                    self._api.enableSecondData,
-                    station_id,
+                _LOGGER.debug(
+                    "SEMS MQTT connecting for station %s",
+                    redact_for_log(self._station_id),
                 )
 
-                config_data = await self._hass.async_add_executor_job(
-                    self._api.getMqttConfig
-                )
-                config = SemsMqttConfig.from_api(config_data, self._region)
+                config = await self._async_get_connection_config()
                 if config.use_tls:
                     tls_context = await self._hass.async_add_executor_job(
                         ssl.create_default_context
@@ -281,26 +285,8 @@ class SemsMqttListener:
                 else:
                     tls_context = None
 
-                # Warm up session by making a REST call first
-                # This ensures the MQTT broker recognizes us as an authenticated session
-                try:
-                    await self._hass.async_add_executor_job(
-                        self._api.getData,
-                        station_id,
-                    )
-                    _LOGGER.debug(
-                        "Session warm-up complete, MQTT broker should recognize us"
-                    )
-                except Exception as warmup_err:
-                    _LOGGER.debug(
-                        "Session warm-up call failed (continuing): %s", warmup_err
-                    )
-
-                # Delay to let session settle and avoid rate limiting
-                await asyncio.sleep(2)
-
                 _LOGGER.debug(
-                    "SEMS MQTT stage 1/3: opening WebSocket + MQTT CONNECT to %s:%d%s",
+                    "Opening SEMS MQTT websocket to %s:%d%s",
                     config.hostname,
                     config.port,
                     config.websocket_path,
@@ -321,14 +307,9 @@ class SemsMqttListener:
                     self._connection_failures = 0
                     self._is_connected = True
                     self._connection_state = "connected"
-                    _LOGGER.debug(
-                        "SEMS MQTT stage 2/3: WebSocket handshake and MQTT "
-                        "CONNECT/CONNACK complete"
-                    )
                     await client.subscribe(self._topic, qos=0)
                     _LOGGER.info(
-                        "✓ SEMS MQTT stage 3/3: SUBSCRIBE/SUBACK complete, connected to "
-                        "SEMS live data and subscribed to %s",
+                        "SEMS MQTT connected and subscribed to %s",
                         redact_for_log(self._topic),
                     )
                     async for message in client.messages:
@@ -343,32 +324,22 @@ class SemsMqttListener:
                 self._connection_state = (
                     "failed" if self._connection_failures >= 3 else "connecting"
                 )
-                error_type = type(err).__name__
-                error_details = str(err)
-                broker_host = config.hostname if "config" in locals() else "unknown"
-                broker_port = config.port if "config" in locals() else 0
-                broker_path = (
-                    config.websocket_path if "config" in locals() else "unknown"
-                )
+                broker_host = config.hostname if config is not None else "unknown"
+                broker_port = config.port if config is not None else 0
+                broker_path = config.websocket_path if config is not None else "unknown"
                 _LOGGER.debug(
-                    "SEMS MQTT connection attempt %d failed (state=%s, error_type=%s, broker=%s:%d%s): %s",
+                    "SEMS MQTT connection attempt %d failed (state=%s, broker=%s:%d%s): %s",
                     self._connection_failures,
                     self._connection_state,
-                    error_type,
                     broker_host,
                     broker_port,
                     broker_path,
-                    error_details,
+                    err,
                 )
-                # Only log WARNING if we're in failed state (after 3+ attempts)
                 if self._connection_failures >= 3:
                     _LOGGER.warning(
-                        "✗ SEMS MQTT connection failed after %d attempts (state=%s, error_type=%s, broker=%s:%d): Check network connectivity, MQTT broker status, and SEMS credentials. Will continue retrying in background.",
+                        "SEMS MQTT has failed %d consecutive connection attempts; retrying in background",
                         self._connection_failures,
-                        self._connection_state,
-                        error_type,
-                        broker_host,
-                        broker_port,
                     )
 
             if self._stop_event.is_set():
@@ -414,7 +385,7 @@ class SemsMqttListener:
 
         normalized = normalize_mqtt_powerflow_payload(decoded)
         if normalized is not None and self._message_handler is not None:
-            # Update the last update time from the message
+            # keep `last_update_time` aligned with the latest normalized payload.
             if isinstance(normalized, dict):
                 self._last_update_time = normalized.get("last_live_update")
             self._message_handler(normalized)

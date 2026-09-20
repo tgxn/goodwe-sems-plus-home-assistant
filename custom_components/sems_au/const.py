@@ -117,23 +117,13 @@ _EMBEDDED_UUID_PATTERN = re.compile(
 )
 
 
-def redact_text(text: str) -> str:
-    """Redact station/device UUIDs embedded within a free-form log message.
-
-    Unlike `redact_for_log`, this matches UUIDs anywhere in the string rather
-    than requiring the whole string to be a UUID. Intended for third-party
-    log lines (e.g. paho-mqtt's raw protocol trace) that embed a topic or
-    identifier inside a larger sentence.
-    """
-    return _EMBEDDED_UUID_PATTERN.sub("<station-id-redacted>", text)
-
-
 def _matches_sensitive_pattern(value: str) -> bool:
     """Return whether a string looks sensitive by format."""
     return bool(
         _EMAIL_PATTERN.fullmatch(value)
         or _UUID_PATTERN.fullmatch(value)
         or _SERIAL_PATTERN.fullmatch(value)
+        or _EMBEDDED_UUID_PATTERN.search(value)
     )
 
 
