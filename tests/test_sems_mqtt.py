@@ -125,12 +125,13 @@ async def test_listener_connects_and_subscribes() -> None:
     """Test connecting with SEMS credentials and subscribing to station data."""
     hass = Mock()
     api = Mock()
+    api.enableSecondData.return_value = True
     api.getMqttConfig.return_value = {
         "clientId": "client-id",
         "userName": "mqtt-user",
         "password": "mqtt-password",
     }
-    hass.async_add_executor_job = AsyncMock(return_value=api.getMqttConfig.return_value)
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *args: fn(*args))
     listener = SemsMqttListener(hass, api, "station-id")
 
     client = AsyncMock()
@@ -151,11 +152,10 @@ async def test_listener_connects_and_subscribes() -> None:
     )
     assert client_class.call_args.kwargs["port"] == 8885
     assert client_class.call_args.kwargs["websocket_path"] == "/mqtt"
-    assert client_class.call_args.kwargs["websocket_headers"] == {
-        "Origin": "https://au-semsplus.goodwe.com"
-    }
     await_args = client.subscribe.await_args
     assert await_args.args == ("/goodwe/second-data/station/station-id",)
+    api.enableSecondData.assert_called_once_with("station-id")
+    api.getMqttConfig.assert_called_once_with()
 
 
 def test_listener_backoff_increases_exponentially() -> None:

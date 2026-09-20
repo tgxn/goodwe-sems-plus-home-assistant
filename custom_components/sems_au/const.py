@@ -112,6 +112,9 @@ _UUID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 _SERIAL_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{12,20}$")
+_EMBEDDED_UUID_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 def _matches_sensitive_pattern(value: str) -> bool:
@@ -120,6 +123,7 @@ def _matches_sensitive_pattern(value: str) -> bool:
         _EMAIL_PATTERN.fullmatch(value)
         or _UUID_PATTERN.fullmatch(value)
         or _SERIAL_PATTERN.fullmatch(value)
+        or _EMBEDDED_UUID_PATTERN.search(value)
     )
 
 

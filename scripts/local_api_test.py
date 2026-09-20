@@ -198,9 +198,15 @@ async def _capture_mqtt(
     """Stream MQTT messages to the console and a JSON Lines capture file."""
     import logging as stdlib_logging
 
-    # Enable aiomqtt debug logging to see raw wire protocol
-    aiomqtt_logger = stdlib_logging.getLogger("aiomqtt")
-    aiomqtt_logger.setLevel(stdlib_logging.DEBUG)
+    # paho-mqtt's enable_logger() only wires up whatever logger object is
+    # passed to aiomqtt.Client(logger=...) - it does not use a fixed logger
+    # name, so setting the "aiomqtt" logger to DEBUG has no effect on its own.
+    protocol_logger = stdlib_logging.getLogger("sems_mqtt.protocol")
+    protocol_logger.setLevel(stdlib_logging.DEBUG)
+
+    # Also enable paho-mqtt's root logger (used by enable_logger)
+    paho_logger = stdlib_logging.getLogger("paho.mqtt.client")
+    paho_logger.setLevel(stdlib_logging.DEBUG)
 
     topic = f"/goodwe/second-data/station/{station_id}"
     deadline = asyncio.get_running_loop().time() + duration if duration else None
@@ -214,6 +220,30 @@ async def _capture_mqtt(
                 config = SemsMqttConfig.from_api(config_data)
                 tls_context = ssl.create_default_context() if config.use_tls else None
 
+                # Warm up the session by making a REST call first
+                # This ensures the broker recognizes us as an authenticated session
+                logging.info("=== Session warm-up: Making initial REST API call ===")
+                try:
+                    await asyncio.to_thread(api.getData, station_id)
+                    logging.info("✓ REST call complete, session activated")
+                except Exception as warmup_err:
+                    logging.warning(
+                        "⚠ Session warm-up call failed: %s (continuing anyway)",
+                        warmup_err,
+                    )
+
+                # Brief delay to let session settle
+                await asyncio.sleep(1)
+
+                # Stage 1/3: about to open the WebSocket and send MQTT CONNECT
+                logging.info("=== Stage 1/3: MQTT CONNECT (sending to broker) ===")
+                logging.info("  client_id: %s", config.client_id)
+                logging.info("  username: %s", "***" if config.username else "NONE")
+                logging.info("  keepalive: 60s")
+                logging.info("  protocol: MQTT 3.1.1")
+                logging.info("  websocket_origin: %s", config.websocket_origin)
+                logging.info("===")
+
                 async with aiomqtt.Client(
                     hostname=config.hostname,
                     port=config.port,
@@ -224,17 +254,13 @@ async def _capture_mqtt(
                     transport="websockets",
                     tls_context=tls_context,
                     websocket_path=config.websocket_path,
-                    websocket_headers={"Origin": config.websocket_origin},
                     keepalive=60,
+                    logger=protocol_logger,
                 ) as client:
-                    # Log CONNECT packet details
-                    logging.info("=== MQTT CONNECT (sending to broker) ===")
-                    logging.info("  client_id: %s", config.client_id)
-                    logging.info("  username: %s", "***" if config.username else "NONE")
-                    logging.info("  keepalive: 60s")
-                    logging.info("  protocol: MQTT 3.1.1")
-                    logging.info("  websocket_origin: %s", config.websocket_origin)
-                    logging.info("===")
+                    # Stage 2/3: WebSocket handshake + CONNECT/CONNACK succeeded
+                    logging.info(
+                        "=== Stage 2/3: CONNACK received, MQTT session established ==="
+                    )
 
                     # Capture CONNECT config for packet inspection
                     connect_info = {
@@ -249,10 +275,10 @@ async def _capture_mqtt(
                         "CONNECT", json.dumps(connect_info).encode()
                     )
 
-                    await client.subscribe(topic, qos=0)
-
-                    # Log SUBSCRIBE packet details
-                    logging.info("=== MQTT SUBSCRIBE (sending to broker) ===")
+                    # Stage 3/3: about to send SUBSCRIBE and wait for SUBACK
+                    logging.info(
+                        "=== Stage 3/3: MQTT SUBSCRIBE (sending to broker) ==="
+                    )
                     logging.info("  topic: %s", topic)
                     logging.info("  qos: 0")
                     logging.info("===")
@@ -265,8 +291,10 @@ async def _capture_mqtt(
                         "SUBSCRIBE", json.dumps(subscribe_info).encode()
                     )
 
+                    await client.subscribe(topic, qos=0)
+
                     logging.info(
-                        "Connected to %s:%s and subscribed to %s",
+                        "=== SUBACK received: connected to %s:%s and subscribed to %s ===",
                         config.hostname,
                         config.port,
                         topic,
@@ -282,13 +310,6 @@ async def _capture_mqtt(
                     )
 
                     logging.info("=== Post-SUBACK: Waiting for device to publish ===")
-                    logging.info("If no messages appear within 10 seconds:")
-                    logging.info("  - Device may only publish to recognized clients")
-                    logging.info("  - Missing PINGREQ/keep-alive after subscription")
-                    logging.info(
-                        "  - Device may require initial publish request from client"
-                    )
-                    logging.info("===")
 
                     async def consume_messages() -> None:
                         nonlocal message_count
@@ -296,7 +317,6 @@ async def _capture_mqtt(
                         logging.debug("Waiting for messages on topic: %s", topic)
                         message_idx = 0
                         start_time = asyncio.get_running_loop().time()
-                        first_message_timeout = 15  # seconds
 
                         async for message in client.messages:
                             elapsed = asyncio.get_running_loop().time() - start_time
@@ -420,6 +440,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
     # Console handler: colored format
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
     console_handler.setFormatter(_ColoredFormatter())
     logger.addHandler(console_handler)
 
@@ -445,6 +466,36 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
     if not station_id:
         raise SystemExit(f"No usable power station ID returned: {power_stations!r}")
+
+    logging.info("Fetching MQTT config for CONNECT packet construction")
+    mqtt_config_full = await asyncio.to_thread(api.getMqttConfig)
+    mqtt_config = SemsMqttConfig.from_api(mqtt_config_full)
+    mqtt_config_file = log_dir / f"{timestamp}_mqtt_config.json"
+    mqtt_config_file.write_text(
+        json.dumps(
+            {
+                "raw_response": mqtt_config_full,
+                "parsed_config": {
+                    "hostname": mqtt_config.hostname,
+                    "port": mqtt_config.port,
+                    "websocket_path": mqtt_config.websocket_path,
+                    "websocket_origin": mqtt_config.websocket_origin,
+                    "use_tls": mqtt_config.use_tls,
+                    "client_id": mqtt_config.client_id,
+                    "username_length": len(mqtt_config.username),
+                    "password_length": len(mqtt_config.password),
+                    "username_prefix": mqtt_config.username[:50],
+                    "password_prefix": base64.b64encode(
+                        mqtt_config.password.encode()[:50]
+                    ).decode(),
+                },
+            },
+            indent=2,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+    logging.info("MQTT config saved to: %s", mqtt_config_file)
 
     logging.info("Fetching initial REST snapshot for %s", station_id)
     monitoring_data = await asyncio.to_thread(api.getData, station_id)
@@ -483,12 +534,16 @@ async def _async_main(args: argparse.Namespace) -> None:
                 logging.info(
                     "  Energy storage cabinets: %s", len(cabinets) if cabinets else 0
                 )
+                # Add delay to avoid rate limiting
+                await asyncio.sleep(2)
             except Exception as err:
                 logging.warning(
                     "  Failed to fetch energy storage for %s: %s",
                     serial_number,
                     err,
                 )
+                # Still add delay even on error
+                await asyncio.sleep(2)
 
             # Fetch battery functions if energy storage exists
             if energy_storage_data.get(serial_number):
@@ -515,6 +570,8 @@ async def _async_main(args: argparse.Namespace) -> None:
                             cabinet_sn,
                             err,
                         )
+                    # Add delay between battery function calls
+                    await asyncio.sleep(2)
 
                     logging.info(
                         "Fetching immediate charging states for cabinet %s (index %d)",
@@ -535,6 +592,8 @@ async def _async_main(args: argparse.Namespace) -> None:
                             cabinet_sn,
                             err,
                         )
+                    # Add delay after charging states call
+                    await asyncio.sleep(2)
 
         if energy_storage_data:
             energy_storage_file.write_text(
@@ -563,6 +622,9 @@ async def _async_main(args: argparse.Namespace) -> None:
             "Streaming live messages from region %s; press Ctrl+C to stop",
             DEFAULT_SEMS_REGION,
         )
+        # Add delay before MQTT to avoid rate limiting after REST calls
+        logging.info("Waiting 3 seconds before MQTT connection to let broker settle...")
+        await asyncio.sleep(3)
         message_count = await _capture_mqtt(
             api, station_id, mqtt_file, log_dir, args.duration
         )

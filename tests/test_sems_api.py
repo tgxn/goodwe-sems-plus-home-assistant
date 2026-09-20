@@ -196,6 +196,30 @@ class TestSemsApi:
             is_web=True,
         )
 
+    @patch.object(SemsApi, "_make_api_call")
+    def test_enable_second_data_success(self, mock_api_call):
+        """Test enableSecondData returns True on success response code."""
+        mock_api_call.return_value = {"code": "00000", "msg": "ok"}
+
+        assert self.api.enableSecondData("station123") is True
+        mock_api_call.assert_called_once_with(
+            "/sems-plant/api/second-data/enable?stationId=station123",
+            method="GET",
+            renewToken=False,
+            maxTokenRetries=2,
+            operation_name="enableSecondData API call",
+            is_web=True,
+            retry_on_api_error=False,
+            return_raw_response=True,
+        )
+
+    @patch.object(SemsApi, "_make_api_call")
+    def test_enable_second_data_failure(self, mock_api_call):
+        """Test enableSecondData returns False on non-success response code."""
+        mock_api_call.return_value = {"code": "C9999", "msg": "failure"}
+
+        assert self.api.enableSecondData("station123") is False
+
     def test_get_login_token_rate_limit_backoff(self):
         """Test rate-limit handling is propagated for coordinator retry scheduling."""
         with patch.object(self.api, "_get_new_login_token") as mock_new:

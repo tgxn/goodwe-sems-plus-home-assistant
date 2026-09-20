@@ -18,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 _GetPowerStationIdByOwnerURLPart = "/PowerStation/GetPowerStationIdByOwner"
 _PowerStationURLPart = "/v3/PowerStation/GetMonitorDetailByPowerstationId"
 _PowerControlURLPart = "/PowerStation/SaveRemoteControlInverter"
+_EnableSecondDataURLPart = "/sems-plant/api/second-data/enable"
 _MqttConfigURLPart = "/sems-plant/api/second-data/config"
 _RequestTimeout = 30  # seconds
 _RateLimitRetryAfterSeconds = 300
@@ -484,6 +485,7 @@ class SemsApi:
         method: str = "POST",
         is_web: bool = False,
         retry_on_api_error: bool = True,
+        return_raw_response: bool = False,
     ) -> Any | None:
         """Make a generic API call with token management and retry logic."""
         _LOGGER.debug("SEMS - Making %s", operation_name)
@@ -533,9 +535,12 @@ class SemsApi:
                     method,
                     is_web,
                     retry_on_api_error,
+                    return_raw_response,
                 )
 
             # Response is valid, return the data
+            if return_raw_response:
+                return json_response
             return json_response.get("data", {}) if is_web else json_response["data"]
 
         except SemsRateLimitedError as exception:
@@ -590,6 +595,43 @@ class SemsApi:
         config = result if isinstance(result, dict) else {}
         _LOGGER.debug("SEMS MQTT configuration: %s", redact_for_log(config))
         return config
+
+    def enableSecondData(
+        self, powerStationId: str, renewToken: bool = False, maxTokenRetries: int = 2
+    ) -> bool:
+        """Enable second-data (MQTT live updates) for a power station."""
+        result = self._make_api_call(
+            f"{_EnableSecondDataURLPart}?stationId={powerStationId}",
+            method="GET",
+            renewToken=renewToken,
+            maxTokenRetries=maxTokenRetries,
+            operation_name="enableSecondData API call",
+            is_web=True,
+            retry_on_api_error=False,
+            return_raw_response=True,
+        )
+
+        if not isinstance(result, dict):
+            _LOGGER.warning(
+                "Unable to enable second-data for station %s: empty response",
+                redact_for_log(powerStationId),
+            )
+            return False
+
+        if result.get("code") in _SuccessCodes:
+            _LOGGER.debug(
+                "Second-data enabled for station %s", redact_for_log(powerStationId)
+            )
+            return True
+
+        _LOGGER.warning(
+            "Failed to enable second-data for station %s: code=%s msg=%s description=%s",
+            redact_for_log(powerStationId),
+            result.get("code"),
+            result.get("msg"),
+            result.get("description"),
+        )
+        return False
 
     def getEnergyStorageIntegratedCabinets(
         self,
