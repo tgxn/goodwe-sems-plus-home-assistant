@@ -77,10 +77,6 @@ class SemsApi:
         else:
             return self._token is not None
 
-    def get_auth_token(self) -> str | None:
-        """Get the current REST API authentication token value."""
-        return self._token.get("token") if isinstance(self._token, dict) else None
-
     def _make_http_request(
         self,
         url: str,

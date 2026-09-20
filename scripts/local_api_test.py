@@ -161,39 +161,6 @@ def _station_id_from_response(value: Any) -> str | None:
     return None
 
 
-def _build_websocket_headers(
-    origin: str, auth_token: str | None = None
-) -> dict[str, str]:
-    """Build WebSocket headers that mimic a browser connection.
-
-    The SEMS broker may validate these headers and only publish to clients
-    that appear to be legitimate browser connections. The auth_token (REST API
-    token) may be required to prove the WebSocket session belongs to an
-    authenticated SEMS user.
-    """
-    headers = {
-        "Origin": origin,
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "Upgrade",
-        "Sec-WebSocket-Extensions": "permessage-deflate",
-        "Sec-WebSocket-Protocol": "mqtt",
-        "Sec-WebSocket-Version": "13",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "websocket",
-        "Sec-Fetch-Site": "cross-site",
-        "Pragma": "no-cache",
-        "Cache-Control": "no-cache",
-    }
-
-    if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
-
-    return headers
-
-
 def _capture_record(topic: str, payload: bytes) -> dict[str, Any]:
     """Build a lossless, analysis-friendly record for one MQTT message."""
     record: dict[str, Any] = {
@@ -250,12 +217,23 @@ async def _capture_mqtt(
         while deadline is None or asyncio.get_running_loop().time() < deadline:
             try:
                 config_data = await asyncio.to_thread(api.getMqttConfig)
-
-                # Fetch the REST API auth token for potential WebSocket auth header
-                auth_token = await asyncio.to_thread(api.get_auth_token)
-
-                config = SemsMqttConfig.from_api(config_data, auth_token=auth_token)
+                config = SemsMqttConfig.from_api(config_data)
                 tls_context = ssl.create_default_context() if config.use_tls else None
+
+                # Warm up the session by making a REST call first
+                # This ensures the broker recognizes us as an authenticated session
+                logging.info("=== Session warm-up: Making initial REST API call ===")
+                try:
+                    await asyncio.to_thread(api.getData, station_id)
+                    logging.info("✓ REST call complete, session activated")
+                except Exception as warmup_err:
+                    logging.warning(
+                        "⚠ Session warm-up call failed: %s (continuing anyway)",
+                        warmup_err,
+                    )
+
+                # Brief delay to let session settle
+                await asyncio.sleep(1)
 
                 # Stage 1/3: about to open the WebSocket and send MQTT CONNECT
                 logging.info("=== Stage 1/3: MQTT CONNECT (sending to broker) ===")
@@ -265,13 +243,6 @@ async def _capture_mqtt(
                 logging.info("  protocol: MQTT 3.1.1")
                 logging.info("  websocket_origin: %s", config.websocket_origin)
                 logging.info("===")
-
-                websocket_headers = _build_websocket_headers(
-                    config.websocket_origin, config.auth_token
-                )
-                logging.debug("WebSocket headers being sent:")
-                for header_name, header_value in websocket_headers.items():
-                    logging.debug("  %s: %s", header_name, header_value)
 
                 async with aiomqtt.Client(
                     hostname=config.hostname,
@@ -283,7 +254,6 @@ async def _capture_mqtt(
                     transport="websockets",
                     tls_context=tls_context,
                     websocket_path=config.websocket_path,
-                    websocket_headers=websocket_headers,
                     keepalive=60,
                     logger=protocol_logger,
                 ) as client:
@@ -499,8 +469,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
     logging.info("Fetching MQTT config for CONNECT packet construction")
     mqtt_config_full = await asyncio.to_thread(api.getMqttConfig)
-    auth_token = await asyncio.to_thread(api.get_auth_token)
-    mqtt_config = SemsMqttConfig.from_api(mqtt_config_full, auth_token=auth_token)
+    mqtt_config = SemsMqttConfig.from_api(mqtt_config_full)
     mqtt_config_file = log_dir / f"{timestamp}_mqtt_config.json"
     mqtt_config_file.write_text(
         json.dumps(
@@ -565,12 +534,16 @@ async def _async_main(args: argparse.Namespace) -> None:
                 logging.info(
                     "  Energy storage cabinets: %s", len(cabinets) if cabinets else 0
                 )
+                # Add delay to avoid rate limiting
+                await asyncio.sleep(2)
             except Exception as err:
                 logging.warning(
                     "  Failed to fetch energy storage for %s: %s",
                     serial_number,
                     err,
                 )
+                # Still add delay even on error
+                await asyncio.sleep(2)
 
             # Fetch battery functions if energy storage exists
             if energy_storage_data.get(serial_number):
@@ -597,6 +570,8 @@ async def _async_main(args: argparse.Namespace) -> None:
                             cabinet_sn,
                             err,
                         )
+                    # Add delay between battery function calls
+                    await asyncio.sleep(2)
 
                     logging.info(
                         "Fetching immediate charging states for cabinet %s (index %d)",
@@ -617,6 +592,8 @@ async def _async_main(args: argparse.Namespace) -> None:
                             cabinet_sn,
                             err,
                         )
+                    # Add delay after charging states call
+                    await asyncio.sleep(2)
 
         if energy_storage_data:
             energy_storage_file.write_text(
@@ -645,6 +622,9 @@ async def _async_main(args: argparse.Namespace) -> None:
             "Streaming live messages from region %s; press Ctrl+C to stop",
             DEFAULT_SEMS_REGION,
         )
+        # Add delay before MQTT to avoid rate limiting after REST calls
+        logging.info("Waiting 3 seconds before MQTT connection to let broker settle...")
+        await asyncio.sleep(3)
         message_count = await _capture_mqtt(
             api, station_id, mqtt_file, log_dir, args.duration
         )

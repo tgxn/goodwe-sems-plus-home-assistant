@@ -53,39 +53,6 @@ _PROTOCOL_LOGGER.addFilter(_RedactStationIdFilter())
 type MqttMessageHandler = Callable[[dict[str, Any]], None]
 
 
-def _build_websocket_headers(
-    origin: str, auth_token: str | None = None
-) -> dict[str, str]:
-    """Build WebSocket headers that mimic a browser connection.
-
-    The SEMS broker may validate these headers and only publish to clients
-    that appear to be legitimate browser connections. The auth_token (REST API
-    token) may be required to prove the WebSocket session belongs to an
-    authenticated SEMS user.
-    """
-    headers = {
-        "Origin": origin,
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "Upgrade",
-        "Sec-WebSocket-Extensions": "permessage-deflate",
-        "Sec-WebSocket-Protocol": "mqtt",
-        "Sec-WebSocket-Version": "13",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "websocket",
-        "Sec-Fetch-Site": "cross-site",
-        "Pragma": "no-cache",
-        "Cache-Control": "no-cache",
-    }
-
-    if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
-
-    return headers
-
-
 @dataclass(frozen=True, slots=True)
 class SemsMqttConfig:
     """Validated SEMS MQTT connection configuration."""
@@ -98,14 +65,12 @@ class SemsMqttConfig:
     client_id: str
     username: str
     password: str
-    auth_token: str | None = None
 
     @classmethod
     def from_api(
         cls,
         data: dict[str, Any],
         region: str = DEFAULT_SEMS_REGION,
-        auth_token: str | None = None,
     ) -> SemsMqttConfig:
         """Build connection configuration from the SEMS API response."""
         region_config = SEMS_REGIONS.get(region)
@@ -139,7 +104,6 @@ class SemsMqttConfig:
             client_id=client_id,
             username=username,
             password=password,
-            auth_token=auth_token,
         )
 
 
@@ -300,13 +264,7 @@ class SemsMqttListener:
                 config_data = await self._hass.async_add_executor_job(
                     self._api.getMqttConfig
                 )
-
-                # Fetch the REST API auth token for potential WebSocket auth header
-                auth_token = await self._hass.async_add_executor_job(
-                    self._api.get_auth_token
-                )
-
-                config = SemsMqttConfig.from_api(config_data, self._region, auth_token)
+                config = SemsMqttConfig.from_api(config_data, self._region)
                 if config.use_tls:
                     tls_context = await self._hass.async_add_executor_job(
                         ssl.create_default_context
@@ -314,19 +272,31 @@ class SemsMqttListener:
                 else:
                     tls_context = None
 
+                # Warm up session by making a REST call first
+                # This ensures the MQTT broker recognizes us as an authenticated session
+                try:
+                    await self._hass.async_add_executor_job(
+                        self._api.getData,
+                        self._topic.split("/")[-1],  # Extract station_id from topic
+                    )
+                    _LOGGER.debug(
+                        "Session warm-up complete, MQTT broker should recognize us"
+                    )
+                except Exception as warmup_err:
+                    _LOGGER.debug(
+                        "Session warm-up call failed (continuing): %s", warmup_err
+                    )
+
+                # Delay to let session settle and avoid rate limiting
+                await asyncio.sleep(2)
+
                 _LOGGER.debug(
                     "SEMS MQTT stage 1/3: opening WebSocket + MQTT CONNECT to %s:%d%s",
                     config.hostname,
                     config.port,
                     config.websocket_path,
                 )
-                websocket_headers = _build_websocket_headers(
-                    config.websocket_origin, config.auth_token
-                )
-                _LOGGER.debug(
-                    "WebSocket headers: %s",
-                    redact_for_log(websocket_headers),
-                )
+
                 async with aiomqtt.Client(
                     hostname=config.hostname,
                     port=config.port,
@@ -337,7 +307,6 @@ class SemsMqttListener:
                     transport="websockets",
                     tls_context=tls_context,
                     websocket_path=config.websocket_path,
-                    websocket_headers=websocket_headers,
                     logger=_PROTOCOL_LOGGER,
                 ) as client:
                     self._connection_failures = 0
