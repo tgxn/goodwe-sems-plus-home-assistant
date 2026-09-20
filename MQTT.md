@@ -10,13 +10,15 @@ The order is:
 
 1. Authenticate with the SEMS web login flow.
 2. Fetch the station list and choose the active station ID.
-3. Call the MQTT config endpoint:
+3. Enable second-data (live updates) for the station:
+   - GET /sems-plant/api/second-data/enable?stationId={station_id}
+4. Call the MQTT config endpoint:
    - GET /sems-plant/api/second-data/config
-4. Read the short-lived MQTT credentials from the response:
+5. Read the short-lived MQTT credentials from the response:
    - clientId
    - userName
    - password
-5. Open an MQTT-over-WebSockets client and subscribe to the station topic.
+6. Open an MQTT-over-WebSockets client and subscribe to the station topic.
 
 This branch is intentionally AU-first and keeps the config model minimal: the integration owns a region map with AU as the default, and it does not carry dead country-override logic or alternate broker endpoints in the config flow.
 
@@ -45,7 +47,6 @@ The integration builds the MQTT client with the same values the website does:
 - hostname: broker host from the region config
 - port: 8885 for AU
 - websocket_path: /mqtt
-- websocket_headers: {"Origin": "https://au-semsplus.goodwe.com"}
 - username: config["userName"]
 - password: config["password"]
 - identifier: config["clientId"]
@@ -122,11 +123,12 @@ A full connection sequence looks like this:
 1. POST auth, receive a session token.
 2. GET /PowerStation/GetPowerStationIdByOwner and resolve station IDs.
 3. For each station, optionally call the main GET /v3/PowerStation/GetMonitorDetailByPowerstationId endpoint to fetch station metadata.
-4. GET /sems-plant/api/second-data/config to obtain the short-lived MQTT session.
-5. Create aiomqtt.Client with the broker URL, MQTT credentials, and WebSocket Origin header.
-6. Subscribe to /goodwe/second-data/station/{station_id}.
-7. Read client.messages in a loop.
-8. On disconnect, auth failure, or any unexpected MQTT error, wait for a bounded backoff and retry.
+4. GET /sems-plant/api/second-data/enable?stationId={station_id} to activate live updates for the station.
+5. GET /sems-plant/api/second-data/config to obtain the short-lived MQTT session.
+6. Create aiomqtt.Client with the broker URL, MQTT credentials, and WebSocket Origin header.
+7. Subscribe to /goodwe/second-data/station/{station_id}.
+8. Read client.messages in a loop.
+9. On disconnect, auth failure, or any unexpected MQTT error, wait for a bounded backoff and retry.
 
 The connection loop is meant to survive temporary auth/session expiry and socket churn without restarting Home Assistant.
 
