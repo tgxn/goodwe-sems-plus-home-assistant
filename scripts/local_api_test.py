@@ -216,6 +216,13 @@ async def _capture_mqtt(
     with output_file.open("a", encoding="utf-8") as capture:
         while deadline is None or asyncio.get_running_loop().time() < deadline:
             try:
+                enabled = await asyncio.to_thread(
+                    api.enableSecondData,
+                    station_id,
+                )
+                if not enabled:
+                    raise ValueError("SEMS second-data enable call failed")
+
                 config_data = await asyncio.to_thread(api.getMqttConfig)
                 config = SemsMqttConfig.from_api(config_data)
                 tls_context = ssl.create_default_context() if config.use_tls else None
