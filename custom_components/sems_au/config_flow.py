@@ -120,7 +120,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             station_id = user_input.get(CONF_STATION_ID)
-            station = self._stations.get(station_id)
+            station = (
+                self._stations.get(station_id)
+                if isinstance(station_id, str)
+                else None
+            )
             if station is None:
                 errors["base"] = "invalid_station"
             else:
@@ -138,7 +142,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._station_step_error is not None:
             errors["base"] = self._station_step_error
 
-        options = [
+        options: list[selector.SelectOptionDict] = [
             {"value": station.station_id, "label": station.name}
             for station in sorted(self._stations.values(), key=lambda item: item.name)
         ]
