@@ -8,6 +8,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -40,7 +41,11 @@ from .const import (
     STATUS_LABELS,
     redact_for_log,
 )
-from .device import device_info_for_station
+from .device import (
+    device_info_for_battery,
+    device_info_for_inverter,
+    device_info_for_station,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +100,11 @@ class SemsInverterSensorType(SemsSensorType):
     """SEMS inverter sensor definition."""
 
 
+@dataclass(slots=True)
+class SemsBatterySensorType(SemsSensorType):
+    """SEMS battery sensor definition."""
+
+
 def _entity_prefix(data: SemsData) -> str:
     """Return the station-scoped unique ID prefix."""
 
@@ -118,9 +128,8 @@ def sensor_options_for_data(data: SemsData) -> list[SemsSensorType]:
     station_prefix = _entity_prefix(data)
     _LOGGER.debug("Detected currency: %s", currency)
 
-    first_inverter = next(iter(data.inverters.values()), None)
     station_device_info = device_info_for_station(
-        data.station_id, data.station_name, first_inverter
+        data.station_id, data.station_name, data.station
     )
 
     if data.station:
@@ -234,6 +243,10 @@ def sensor_options_for_data(data: SemsData) -> list[SemsSensorType]:
         ]
 
     for serial_number, inverter_data in data.inverters.items():
+        inverter_sensor_start = len(sensors)
+        inverter_device_info = device_info_for_inverter(
+            station_prefix, serial_number, inverter_data
+        )
         path_to_inverter: SemsValuePath = [serial_number]
 
         sensors += [
@@ -425,100 +438,6 @@ def sensor_options_for_data(data: SemsData) -> list[SemsSensorType]:
                 SensorStateClass.MEASUREMENT,
             ),
         ]
-        battery_count = get_value_from_path(
-            data.inverters, [*path_to_inverter, "battery_count"]
-        )
-        if isinstance(battery_count, int):
-            for idx in range(battery_count):
-                path_to_battery: SemsValuePath = [
-                    *path_to_inverter,
-                    "more_batterys",
-                    idx,
-                ]
-                sensors += [
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-pbattery",
-                        [*path_to_battery, "pbattery"],
-                        _inverter_entity_name(inverter_data, f"Battery {idx} Power"),
-                        SensorDeviceClass.POWER,
-                        UnitOfPower.WATT,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-vbattery",
-                        [*path_to_battery, "vbattery"],
-                        _inverter_entity_name(inverter_data, f"Battery {idx} Voltage"),
-                        SensorDeviceClass.VOLTAGE,
-                        UnitOfElectricPotential.VOLT,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-ibattery",
-                        [*path_to_battery, "ibattery"],
-                        _inverter_entity_name(inverter_data, f"Battery {idx} Current"),
-                        SensorDeviceClass.CURRENT,
-                        UnitOfElectricCurrent.AMPERE,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-soc",
-                        [*path_to_battery, "soc"],
-                        _inverter_entity_name(
-                            inverter_data, f"Battery {idx} State of Charge"
-                        ),
-                        SensorDeviceClass.BATTERY,
-                        PERCENTAGE,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-soh",
-                        [*path_to_battery, "soh"],
-                        _inverter_entity_name(
-                            inverter_data, f"Battery {idx} State of Health"
-                        ),
-                        SensorDeviceClass.BATTERY,
-                        PERCENTAGE,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-bms_temperature",
-                        [*path_to_battery, "bms_temperature"],
-                        _inverter_entity_name(
-                            inverter_data, f"Battery {idx} BMS Temperature"
-                        ),
-                        SensorDeviceClass.TEMPERATURE,
-                        UnitOfTemperature.CELSIUS,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-bms_discharge_i_max",
-                        [*path_to_battery, "bms_discharge_i_max"],
-                        _inverter_entity_name(
-                            inverter_data, f"Battery {idx} BMS Discharge Max Current"
-                        ),
-                        SensorDeviceClass.CURRENT,
-                        UnitOfElectricCurrent.AMPERE,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                    SemsInverterSensorType(
-                        station_device_info,
-                        f"{station_prefix}-{serial_number}-{idx}-bms_charge_i_max",
-                        [*path_to_battery, "bms_charge_i_max"],
-                        _inverter_entity_name(
-                            inverter_data, f"Battery {idx} BMS Charge Max Current"
-                        ),
-                        SensorDeviceClass.CURRENT,
-                        UnitOfElectricCurrent.AMPERE,
-                        SensorStateClass.MEASUREMENT,
-                    ),
-                ]
         # Per-inverter meter and energy data (hybrid/storage inverters)
         if (
             get_value_from_path(data.inverters, [*path_to_inverter, "pmeter"])
@@ -756,6 +675,63 @@ def sensor_options_for_data(data: SemsData) -> list[SemsSensorType]:
             redact_for_log(serial_number),
             redact_for_log(sensors),
         )
+        for sensor in sensors[inverter_sensor_start:]:
+            if isinstance(sensor, SemsInverterSensorType):
+                sensor.device_info = inverter_device_info
+
+    for battery_serial, battery_data in (data.batteries or {}).items():
+        battery_device_info = device_info_for_battery(
+            station_prefix, battery_serial, battery_data
+        )
+        battery_path: SemsValuePath = [battery_serial]
+        for key, name, device_class, unit in (
+            ("pbattery", "Power", SensorDeviceClass.POWER, UnitOfPower.WATT),
+            (
+                "vbattery",
+                "Voltage",
+                SensorDeviceClass.VOLTAGE,
+                UnitOfElectricPotential.VOLT,
+            ),
+            (
+                "ibattery",
+                "Current",
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            ("soc", "State of charge", SensorDeviceClass.BATTERY, PERCENTAGE),
+            ("soh", "State of health", SensorDeviceClass.BATTERY, PERCENTAGE),
+            (
+                "bms_temperature",
+                "Temperature",
+                SensorDeviceClass.TEMPERATURE,
+                UnitOfTemperature.CELSIUS,
+            ),
+            (
+                "bms_discharge_i_max",
+                "Maximum discharge current",
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+            (
+                "bms_charge_i_max",
+                "Maximum charge current",
+                SensorDeviceClass.CURRENT,
+                UnitOfElectricCurrent.AMPERE,
+            ),
+        ):
+            if get_value_from_path(data.batteries or {}, [*battery_path, key]) is None:
+                continue
+            sensors.append(
+                SemsBatterySensorType(
+                    battery_device_info,
+                    f"{station_prefix}:battery:{battery_serial}:{key}",
+                    [*battery_path, key],
+                    name,
+                    device_class,
+                    unit,
+                    SensorStateClass.MEASUREMENT,
+                )
+            )
 
     # Station powerflow + SEMS charts live in `SemsData.powerflow`.
     if data.powerflow is not None:
@@ -1061,17 +1037,21 @@ def sensor_options_for_data(data: SemsData) -> list[SemsSensorType]:
         ),
         SemsStationSensorType(
             device_info=station_device_info,
-            unique_id=f"{mqtt_prefix}-is-connected",
-            value_path=["mqtt_is_connected"],
-            name="MQTT Connected",
-        ),
-        SemsStationSensorType(
-            device_info=station_device_info,
             unique_id=f"{mqtt_prefix}-connection-failures",
             value_path=["mqtt_connection_failures"],
             name="MQTT Connection Failures",
             native_unit_of_measurement="attempts",
             state_class=SensorStateClass.MEASUREMENT,
+        ),
+        SemsStationSensorType(
+            device_info=station_device_info,
+            unique_id=f"{mqtt_prefix}-last-message",
+            value_path=["mqtt_last_message_received_at"],
+            name="Last Live Message",
+            device_class=SensorDeviceClass.TIMESTAMP,
+            data_type_converter=lambda value: (
+                value if isinstance(value, datetime) else None
+            ),
         ),
     ]
 
@@ -1094,6 +1074,8 @@ async def async_setup_entry(
             sensor_class = SemsPowerflowSensor
         elif isinstance(sensor_option, SemsStationSensorType):
             sensor_class = SemsStationSensor
+        elif isinstance(sensor_option, SemsBatterySensorType):
+            sensor_class = SemsBatterySensor
         else:
             sensor_class = SemsInverterSensor
 
@@ -1247,6 +1229,15 @@ class SemsStationSensor(SemsSensor):
         """Return station dict."""
 
         return self.coordinator.data.station
+
+
+class SemsBatterySensor(SemsSensor):
+    """Sensor that reads from battery data."""
+
+    def _get_data_dict(self) -> dict[str, Any] | None:
+        """Return battery dict."""
+
+        return self.coordinator.data.batteries
 
 
 class SemsPowerflowSensor(SemsSensor):

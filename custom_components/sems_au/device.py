@@ -10,34 +10,59 @@ from .const import DOMAIN
 def device_info_for_station(
     station_id: str | None,
     station_name: str | None,
-    inverter_data: dict[str, Any] | None = None,
+    station_data: dict[str, Any] | None = None,
 ) -> DeviceInfo:
-    """Build device info for the station feed."""
+    """Build device info for a SEMS station."""
 
-    inverter_data = inverter_data or {}
-    identifier = station_id or inverter_data.get("powerstation_id") or "station"
-    name = station_name or inverter_data.get("station_name") or "SEMS Station"
+    station_data = station_data or {}
+    identifier = station_id or "station"
+    name = station_name or "SEMS Station"
 
     if not isinstance(name, str) or not name.strip():
         name = "SEMS Station"
 
-    firmware_version = inverter_data.get("firmwareversion")
-    if firmware_version in (None, ""):
-        sw_version = "unknown"
-    else:
-        sw_version = str(firmware_version)
-
-    # NOTE: We intentionally keep fallbacks here because not every SEMS payload
-    # is guaranteed to contain `model_type`, `firmwareversion`, etc.
     return DeviceInfo(
         identifiers={(DOMAIN, str(identifier))},
         name=name,
         manufacturer="GoodWe",
-        model=inverter_data.get("model_type", "unknown"),
-        sw_version=sw_version,
+        model=station_data.get("powerstation_type", "SEMS Station"),
         configuration_url=(
             f"https://semsportal.com/PowerStation/PowerStatusSnMin/{identifier}"
             if identifier
             else None
         ),
+    )
+
+
+def device_info_for_inverter(
+    station_id: str,
+    serial_number: str,
+    inverter_data: dict[str, Any],
+) -> DeviceInfo:
+    """Build device info for an inverter belonging to a station."""
+    firmware = inverter_data.get("firmwareversion")
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{station_id}:inverter:{serial_number}")},
+        name=inverter_data.get("name") or f"Inverter {serial_number}",
+        manufacturer="GoodWe",
+        model=inverter_data.get("model_type", "Inverter"),
+        sw_version=str(firmware) if firmware not in (None, "") else None,
+        via_device=(DOMAIN, station_id),
+    )
+
+
+def device_info_for_battery(
+    station_id: str,
+    serial_number: str,
+    battery_data: dict[str, Any],
+) -> DeviceInfo:
+    """Build device info for a battery belonging to a station."""
+    firmware = battery_data.get("bmssoftwareversion")
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{station_id}:battery:{serial_number}")},
+        name=battery_data.get("name") or f"Battery {serial_number}",
+        manufacturer="GoodWe",
+        model="Battery",
+        sw_version=str(firmware) if firmware not in (None, "") else None,
+        via_device=(DOMAIN, station_id),
     )

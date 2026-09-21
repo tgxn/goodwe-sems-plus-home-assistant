@@ -6,17 +6,14 @@ import dataclasses
 import re
 from typing import Any
 
-# import voluptuous as vol
-# from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
-
 DOMAIN = "sems_au"
 
-PLATFORMS = ["number", "sensor", "switch"]
+PLATFORMS = ["binary_sensor", "sensor"]
 
 CONF_STATION_ID = "powerstation_id"
 CONF_REGION = "region"
 
-DEFAULT_SCAN_INTERVAL = 120  # timedelta(seconds=120) - reduced from 60 to ease API pressure and allow MQTT updates to integrate
+DEFAULT_SCAN_INTERVAL = 300
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

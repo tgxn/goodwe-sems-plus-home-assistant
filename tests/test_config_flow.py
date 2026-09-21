@@ -10,14 +10,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.sems_au import async_migrate_entry
-from custom_components.sems_au.config_flow import _normalize_station_ids
 from custom_components.sems_au.const import (
     CONF_REGION,
     CONF_STATION_ID,
     DEFAULT_SEMS_REGION,
     DOMAIN,
 )
+from custom_components.sems_au.sems_api import SemsStation
 
 MOCK_USERNAME = "test@example.com"
 MOCK_PASSWORD = "test_password"
@@ -25,77 +24,20 @@ MOCK_STATION_ID_1 = "12345678-1234-5678-9abc-123456789abc"
 MOCK_STATION_ID_2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
-# ---------------------------------------------------------------------------
-# _normalize_station_ids unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestNormalizeStationIds:
-    """Tests for _normalize_station_ids helper."""
-
-    def test_single_string_returns_list_with_one_item(self):
-        """A plain UUID string is wrapped in a list."""
-        result = _normalize_station_ids(MOCK_STATION_ID_1)
-        assert result == [MOCK_STATION_ID_1]
-
-    def test_empty_string_returns_empty_list(self):
-        """An empty string results in an empty list."""
-        assert _normalize_station_ids("") == []
-
-    def test_list_of_strings_returned_as_is(self):
-        """A list of strings is returned unchanged."""
-        ids = [MOCK_STATION_ID_1, MOCK_STATION_ID_2]
-        assert _normalize_station_ids(ids) == ids
-
-    def test_list_filters_empty_strings(self):
-        """Empty strings inside a list are removed."""
-        assert _normalize_station_ids([MOCK_STATION_ID_1, "", MOCK_STATION_ID_2]) == [
-            MOCK_STATION_ID_1,
-            MOCK_STATION_ID_2,
-        ]
-
-    def test_none_returns_empty_list(self):
-        """None input results in an empty list."""
-        assert _normalize_station_ids(None) == []
-
-    def test_unsupported_type_returns_empty_list(self):
-        """Unsupported types (e.g. int, dict) return an empty list."""
-        assert _normalize_station_ids(42) == []
-        assert _normalize_station_ids({}) == []
-
-
-# ---------------------------------------------------------------------------
-# Config flow integration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def mock_setup_entry():
     """Prevent the integration from being set up during config flow tests."""
     with patch(
-        "custom_components.sems_au.async_setup_entry",
-        return_value=True,
+        "custom_components.sems_au.async_setup_entry", return_value=True
     ) as mock:
         yield mock
 
 
-async def _init_flow(hass: HomeAssistant) -> dict:
-    """Start a fresh config flow and return the first result."""
+async def _submit_credentials(hass: HomeAssistant, stations: list[SemsStation]) -> dict:
+    """Start setup and submit valid account credentials."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
     )
-    return result
-
-
-async def test_single_station_creates_entry_directly(
-    hass: HomeAssistant,
-    enable_custom_integrations: None,
-    mock_setup_entry,
-) -> None:
-    """When exactly one station is found the entry is created without a selection step."""
-    del enable_custom_integrations
-
-    result = await _init_flow(hass)
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
 
@@ -105,86 +47,134 @@ async def test_single_station_creates_entry_directly(
             return_value=True,
         ),
         patch(
-            "custom_components.sems_au.sems_api.SemsApi.getPowerStationIds",
-            return_value=MOCK_STATION_ID_1,
+            "custom_components.sems_au.sems_api.SemsApi.get_stations",
+            return_value=stations,
         ),
     ):
-        result = await hass.config_entries.flow.async_configure(
+        return await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {CONF_USERNAME: MOCK_USERNAME, CONF_PASSWORD: MOCK_PASSWORD},
         )
 
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["title"] == f"Station {MOCK_STATION_ID_1}"
-    assert result["data"][CONF_STATION_ID] == MOCK_STATION_ID_1
-    assert result["data"][CONF_USERNAME] == MOCK_USERNAME
-    assert result["data"][CONF_REGION] == DEFAULT_SEMS_REGION
 
-
-async def test_multiple_stations_auto_creates_all_entries(
+async def test_single_station_still_requires_selection(
     hass: HomeAssistant,
     enable_custom_integrations: None,
     mock_setup_entry,
 ) -> None:
-    """When multiple stations are found, all entries are created automatically."""
+    """A single station should still be explicitly selected."""
     del enable_custom_integrations
+    result = await _submit_credentials(hass, [SemsStation(MOCK_STATION_ID_1, "Home")])
 
-    result = await _init_flow(hass)
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "station"
 
-    with (
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.test_authentication",
-            return_value=True,
-        ),
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.getPowerStationIds",
-            return_value=[MOCK_STATION_ID_1, MOCK_STATION_ID_2],
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_USERNAME: MOCK_USERNAME, CONF_PASSWORD: MOCK_PASSWORD},
-        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_STATION_ID: MOCK_STATION_ID_1}
+    )
 
-    # First station is created immediately, no selection step shown
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["title"] == f"Station {MOCK_STATION_ID_1}"
-    assert result["data"][CONF_STATION_ID] == MOCK_STATION_ID_1
-
-    await hass.async_block_till_done()
-    entries = hass.config_entries.async_entries(DOMAIN)
-    station_ids = {entry.data[CONF_STATION_ID] for entry in entries}
-    assert station_ids == {MOCK_STATION_ID_1, MOCK_STATION_ID_2}
-    assert {entry.data[CONF_REGION] for entry in entries} == {DEFAULT_SEMS_REGION}
-    unique_ids = {entry.unique_id for entry in entries}
-    assert unique_ids == {MOCK_STATION_ID_1, MOCK_STATION_ID_2}
+    assert result["title"] == "Home"
+    assert result["data"] == {
+        CONF_USERNAME: MOCK_USERNAME,
+        CONF_PASSWORD: MOCK_PASSWORD,
+        CONF_REGION: DEFAULT_SEMS_REGION,
+        CONF_STATION_ID: MOCK_STATION_ID_1,
+        "station_name": "Home",
+    }
 
 
-async def test_single_station_already_configured_aborts(
+async def test_station_step_lists_multiple_stations(
     hass: HomeAssistant,
     enable_custom_integrations: None,
     mock_setup_entry,
 ) -> None:
-    """Single-station setup aborts when the station is already configured."""
+    """Station selection should list every unconfigured station."""
     del enable_custom_integrations
+    result = await _submit_credentials(
+        hass,
+        [
+            SemsStation(MOCK_STATION_ID_2, "Workshop"),
+            SemsStation(MOCK_STATION_ID_1, "Home"),
+        ],
+    )
 
+    options = result["data_schema"].schema[CONF_STATION_ID].config["options"]
+    assert options == [
+        {"value": MOCK_STATION_ID_1, "label": "Home"},
+        {"value": MOCK_STATION_ID_2, "label": "Workshop"},
+    ]
+
+
+async def test_station_step_filters_configured_stations(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+    mock_setup_entry,
+) -> None:
+    """Previously configured stations should not be selectable."""
+    del enable_custom_integrations
     MockConfigEntry(
         domain=DOMAIN,
         unique_id=MOCK_STATION_ID_1,
-        data={
-            CONF_USERNAME: "existing@example.com",
-            CONF_PASSWORD: "existing_password",
-            CONF_STATION_ID: MOCK_STATION_ID_1,
-        },
+        data={CONF_STATION_ID: MOCK_STATION_ID_1},
     ).add_to_hass(hass)
 
-    result = await _init_flow(hass)
+    result = await _submit_credentials(
+        hass,
+        [
+            SemsStation(MOCK_STATION_ID_1, "Home"),
+            SemsStation(MOCK_STATION_ID_2, "Workshop"),
+        ],
+    )
 
-    with (
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.test_authentication",
-            return_value=False,
-        ),
+    options = result["data_schema"].schema[CONF_STATION_ID].config["options"]
+    assert options == [{"value": MOCK_STATION_ID_2, "label": "Workshop"}]
+
+
+@pytest.mark.parametrize(
+    ("stations", "expected_error"),
+    [
+        ([], "no_stations_found"),
+        ([SemsStation(MOCK_STATION_ID_1, "Home")], "all_stations_configured"),
+    ],
+)
+async def test_station_step_shows_empty_states(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+    mock_setup_entry,
+    stations: list[SemsStation],
+    expected_error: str,
+) -> None:
+    """Empty discovery results should remain on the station step."""
+    del enable_custom_integrations
+    if stations:
+        MockConfigEntry(
+            domain=DOMAIN,
+            unique_id=MOCK_STATION_ID_1,
+            data={CONF_STATION_ID: MOCK_STATION_ID_1},
+        ).add_to_hass(hass)
+
+    result = await _submit_credentials(hass, stations)
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "station"
+    assert result["errors"]["base"] == expected_error
+    assert result["data_schema"].schema == {}
+
+
+async def test_invalid_authentication_stays_on_user_step(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+) -> None:
+    """Invalid credentials should not advance to station discovery."""
+    del enable_custom_integrations
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+
+    with patch(
+        "custom_components.sems_au.sems_api.SemsApi.test_authentication",
+        return_value=False,
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
@@ -194,54 +184,3 @@ async def test_single_station_already_configured_aborts(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "user"
     assert result["errors"]["base"] == "invalid_auth"
-
-
-async def test_no_stations_found_shows_error(
-    hass: HomeAssistant,
-    enable_custom_integrations: None,
-) -> None:
-    """When no station IDs are returned the no_stations_found error is shown."""
-    del enable_custom_integrations
-
-    result = await _init_flow(hass)
-
-    with (
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.test_authentication",
-            return_value=True,
-        ),
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.getPowerStationIds",
-            return_value=None,
-        ),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {CONF_USERNAME: MOCK_USERNAME, CONF_PASSWORD: MOCK_PASSWORD},
-        )
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "user"
-    assert result["errors"]["base"] == "no_stations_found"
-
-
-async def test_migrate_entry_sets_unique_id_from_station_id(
-    hass: HomeAssistant,
-) -> None:
-    """Migration sets unique_id from station_id for existing entries."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=1,
-        unique_id=None,
-        data={
-            CONF_USERNAME: MOCK_USERNAME,
-            CONF_PASSWORD: MOCK_PASSWORD,
-            CONF_STATION_ID: MOCK_STATION_ID_1,
-        },
-    )
-    entry.add_to_hass(hass)
-
-    assert await async_migrate_entry(hass, entry)
-    assert entry.version == 3
-    assert entry.unique_id == MOCK_STATION_ID_1
-    assert entry.data[CONF_REGION] == DEFAULT_SEMS_REGION

@@ -8,6 +8,7 @@ import logging
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlparse
@@ -48,6 +49,7 @@ class _RedactStationIdFilter(logging.Filter):
 _PROTOCOL_LOGGER.addFilter(_RedactStationIdFilter())
 
 type MqttMessageHandler = Callable[[dict[str, Any]], None]
+type MqttStatusHandler = Callable[[str, bool, int, datetime | None], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +212,7 @@ class SemsMqttListener:
         station_id: str,
         region: str = DEFAULT_SEMS_REGION,
         message_handler: MqttMessageHandler | None = None,
+        status_handler: MqttStatusHandler | None = None,
     ) -> None:
         """Initialize the listener."""
         self._hass = hass
@@ -218,10 +221,12 @@ class SemsMqttListener:
         self._topic = f"/goodwe/second-data/station/{station_id}"
         self._region = region
         self._message_handler = message_handler
+        self._status_handler = status_handler
         self._stop_event = asyncio.Event()
         self._connection_failures = 0
         self._is_connected = False
         self._last_update_time: str | None = None
+        self._last_message_received_at: datetime | None = None
         self._connection_state = (
             "disconnected"  # disconnected, connecting, connected, failed
         )
@@ -253,6 +258,21 @@ class SemsMqttListener:
         """Return the timestamp of the last successful MQTT message."""
         return self._last_update_time
 
+    @property
+    def last_message_received_at(self) -> datetime | None:
+        """Return when Home Assistant last received a valid station message."""
+        return self._last_message_received_at
+
+    def _notify_status(self) -> None:
+        """Publish the current connection diagnostics."""
+        if self._status_handler is not None:
+            self._status_handler(
+                self._connection_state,
+                self._is_connected,
+                self._connection_failures,
+                self._last_message_received_at,
+            )
+
     async def _async_get_connection_config(self) -> SemsMqttConfig:
         """Enable station second-data and fetch MQTT connection config."""
         enabled = await self._hass.async_add_executor_job(
@@ -272,6 +292,7 @@ class SemsMqttListener:
             config: SemsMqttConfig | None = None
             try:
                 self._connection_state = "connecting"
+                self._notify_status()
                 _LOGGER.debug(
                     "SEMS MQTT connecting for station %s",
                     redact_for_log(self._station_id),
@@ -307,6 +328,7 @@ class SemsMqttListener:
                     self._connection_failures = 0
                     self._is_connected = True
                     self._connection_state = "connected"
+                    self._notify_status()
                     await client.subscribe(self._topic, qos=0)
                     _LOGGER.info(
                         "SEMS MQTT connected and subscribed to %s",
@@ -324,6 +346,7 @@ class SemsMqttListener:
                 self._connection_state = (
                     "failed" if self._connection_failures >= 3 else "connecting"
                 )
+                self._notify_status()
                 broker_host = config.hostname if config is not None else "unknown"
                 broker_port = config.port if config is not None else 0
                 broker_path = config.websocket_path if config is not None else "unknown"
@@ -345,6 +368,7 @@ class SemsMqttListener:
             if self._stop_event.is_set():
                 self._connection_state = "disconnected"
                 self._is_connected = False
+                self._notify_status()
                 break
 
             delay = self._get_backoff_delay(self._connection_failures)
@@ -362,6 +386,7 @@ class SemsMqttListener:
         """Request that the listener stop."""
         self._is_connected = False
         self._connection_state = "disconnected"
+        self._notify_status()
         _LOGGER.debug("Requesting SEMS MQTT listener to stop...")
         self._stop_event.set()
 
@@ -382,6 +407,20 @@ class SemsMqttListener:
             redact_for_log(topic),
             redact_for_log(decoded),
         )
+
+        message = (
+            decoded.get("message", decoded.get("msg", decoded))
+            if isinstance(decoded, dict)
+            else None
+        )
+        if not isinstance(message, dict):
+            return
+        station_id = message.get("stationId")
+        if isinstance(station_id, str) and station_id != self._station_id:
+            return
+
+        self._last_message_received_at = datetime.now(UTC)
+        self._notify_status()
 
         normalized = normalize_mqtt_powerflow_payload(decoded)
         if normalized is not None and self._message_handler is not None:

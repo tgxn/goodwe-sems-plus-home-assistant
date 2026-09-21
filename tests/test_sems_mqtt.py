@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -80,6 +81,47 @@ def test_listener_logs_redacted_payload(caplog: pytest.LogCaptureFixture) -> Non
 
     assert "GW123456789012" not in caplog.text
     assert "<GW1...012>" in caplog.text
+
+
+def test_listener_updates_station_last_message_diagnostics() -> None:
+    """A valid station message should immediately publish its receipt time."""
+    status_handler = Mock()
+    message_handler = Mock()
+    listener = SemsMqttListener(
+        Mock(),
+        Mock(),
+        "station-id",
+        message_handler=message_handler,
+        status_handler=status_handler,
+    )
+
+    listener._handle_message(
+        "/goodwe/second-data/station/station-id",
+        b'{"stationId":"station-id","pSystem":"1.0"}',
+    )
+
+    assert listener.last_message_received_at is not None
+    assert listener.last_message_received_at.tzinfo is UTC
+    status_handler.assert_called_once_with(
+        "disconnected", False, 0, listener.last_message_received_at
+    )
+    message_handler.assert_called_once()
+
+
+def test_listener_ignores_other_station_for_diagnostics() -> None:
+    """Messages for another station must not advance diagnostics."""
+    status_handler = Mock()
+    listener = SemsMqttListener(
+        Mock(), Mock(), "station-id", status_handler=status_handler
+    )
+
+    listener._handle_message(
+        "/goodwe/second-data/station/other-station",
+        b'{"stationId":"other-station","pSystem":"1.0"}',
+    )
+
+    assert listener.last_message_received_at is None
+    status_handler.assert_not_called()
 
 
 def test_normalize_mqtt_powerflow_payload() -> None:

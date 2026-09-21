@@ -6,12 +6,12 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -32,13 +32,6 @@ from .sems_mqtt import SemsMqttListener
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-
-_IMMEDIATE_CHARGING_FUNCTION_KEYS = {
-    "immediate_charge",
-    "stop_charging",
-    "end_charge_soc",
-    "bat_immediate_charge_power",
-}
 
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -155,6 +148,9 @@ def _normalize_station_data(
         _set_if_not_none(station, target_key, _decimal_value(info.get(source_key)))
 
     _set_if_not_none(station, "status", _int_value(info.get("status")))
+    powerstation_type = info.get("powerstation_type")
+    if isinstance(powerstation_type, str) and powerstation_type:
+        station["powerstation_type"] = powerstation_type
 
     for source_key, target_key in (
         ("month_generation", "energy_this_month"),
@@ -199,8 +195,7 @@ class SemsData:
 
     inverters: dict[str, dict[str, Any]]
     station: dict[str, Any] | None = None
-    batteries: dict[str, dict[str, dict[str, Any]]] | None = None
-    immediate_charging: dict[str, dict[str, Any]] | None = None
+    batteries: dict[str, dict[str, Any]] | None = None
     powerflow: dict[str, Any] | None = None
     currency: str | None = None
     station_id: str | None = None
@@ -232,6 +227,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SemsConfigEntry) -> bool
         entry.data[CONF_STATION_ID],
         region,
         coordinator.async_apply_mqtt_powerflow_update,
+        coordinator.async_apply_mqtt_status_update,
     )
     mqtt_task = hass.async_create_background_task(
         mqtt_listener.async_run(), f"{DOMAIN} live data listener"
@@ -243,25 +239,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SemsConfigEntry) -> bool
         mqtt_task=mqtt_task,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    return True
-
-
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate old config entries."""
-    if entry.version > 3:
-        _LOGGER.error("Cannot migrate entry version %s", entry.version)
-        return False
-
-    data = dict(entry.data)
-    if entry.version < 2:
-        station_id = entry.data.get(CONF_STATION_ID)
-        if entry.unique_id is None and isinstance(station_id, str) and station_id:
-            hass.config_entries.async_update_entry(entry, unique_id=station_id)
-
-    if entry.version < 3:
-        data.setdefault(CONF_REGION, DEFAULT_SEMS_REGION)
-        hass.config_entries.async_update_entry(entry, data=data, version=3)
 
     return True
 
@@ -290,9 +267,7 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
         self.sems_api = sems_api
         self.station_id = entry.data[CONF_STATION_ID]
 
-        update_interval = timedelta(
-            seconds=entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        )
+        update_interval = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
@@ -300,134 +275,6 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
             name=DOMAIN,
             update_interval=update_interval,
         )
-
-    async def _async_get_energy_storage_cabinets(
-        self, data_result: dict[str, Any]
-    ) -> dict[str, list[dict[str, Any]]]:
-        """Fetch the energy storage cabinets when batteries are available."""
-        if not data_result.get("info", {}).get("is_stored", False):
-            return {}
-
-        _LOGGER.debug("Getting energy storage integrated cabinets")
-        cabinets: dict[str, list[dict[str, Any]]] = {}
-        for inverter in data_result.get("inverter", {}):
-            sn = inverter.get("invert_full", {}).get("sn")
-            if not sn:
-                continue
-            try:
-                result = await self.hass.async_add_executor_job(
-                    self.sems_api.getEnergyStorageIntegratedCabinets,
-                    self.station_id,
-                    sn,
-                )
-                cabinets[sn] = result if isinstance(result, list) else []
-            except Exception as err:
-                _LOGGER.debug(
-                    "Unable to fetch energy storage cabinets for %s: %s",
-                    redact_for_log(sn),
-                    err,
-                )
-                cabinets[sn] = []
-        return cabinets
-
-    async def _async_get_battery_functions(
-        self, energy_storage_cabinets: dict[str, list[dict[str, Any]]]
-    ) -> dict[str, dict[str, dict[str, Any]]] | None:
-        """Fetch and retain supported battery functions."""
-        if energy_storage_cabinets:
-            _LOGGER.debug("Getting battery general functions for each cabinet")
-        battery_general_functions: dict[str, dict[str, dict[str, Any]]] = {}
-        for sn, bats in energy_storage_cabinets.items():
-            battery_general_functions[sn] = {}
-            for bat in bats:
-                if not isinstance(bat, dict) or not isinstance(
-                    bat.get("translateCode"), str
-                ):
-                    continue
-                bat_code = bat["translateCode"]
-                try:
-                    result = await self.hass.async_add_executor_job(
-                        self.sems_api.getBatteryGeneralFunctions, sn, bat.get("no", 0)
-                    )
-                    battery_general_functions[sn][bat_code] = result
-                except Exception as err:
-                    _LOGGER.debug(
-                        "Unable to fetch battery functions for %s (battery %s): %s",
-                        redact_for_log(sn),
-                        bat_code,
-                        err,
-                    )
-                    battery_general_functions[sn][bat_code] = {}
-
-        batteries: dict[str, dict[str, dict[str, Any]]] = {}
-        for sn, bat_dict in battery_general_functions.items():
-            for bat_id, bat in bat_dict.items():
-                if not isinstance(bat_id, str):
-                    continue
-                for child in bat.get("functionMenus", {}).get("children", []):
-                    for func in child.get("functions", []):
-                        function_key = func.get("translateKey")
-                        if not isinstance(function_key, str):
-                            continue
-                        if function_key not in _IMMEDIATE_CHARGING_FUNCTION_KEYS:
-                            continue
-
-                        if sn not in batteries:
-                            batteries[sn] = {}
-                        if bat_id not in batteries[sn]:
-                            batteries[sn][bat_id] = {
-                                "name": next(
-                                    (
-                                        cabinet.get("name", "")
-                                        for cabinet in energy_storage_cabinets.get(
-                                            sn, []
-                                        )
-                                        if cabinet.get("translateCode") == bat_id
-                                    ),
-                                    "",
-                                ),
-                                "functions": {},
-                            }
-
-                        batteries[sn][bat_id]["functions"][function_key] = {
-                            "address": func.get("address"),
-                            "id": func.get("id"),
-                        }
-
-        return batteries or None
-
-    async def _async_get_immediate_charging(
-        self, batteries: dict[str, dict[str, dict[str, Any]]] | None
-    ) -> dict[str, dict[str, Any]] | None:
-        """Fetch immediate-charging state for battery-equipped inverters."""
-        if not batteries:
-            return None
-
-        immediate_charging: dict[str, dict[str, Any]] = {}
-        for inverter_sn in batteries:
-            try:
-                immediate_charging_result = await self.hass.async_add_executor_job(
-                    self.sems_api.getBatteryImmediateChargingStates, inverter_sn
-                )
-                state_data = (immediate_charging_result or {}).get("data", {})
-                immediate_charging[inverter_sn] = {
-                    "enabled": bool(state_data.get("47545", 0)),
-                    "end_charge_soc": state_data.get("47546", 0),
-                    "charging_power": state_data.get("47603", 0),
-                }
-            except Exception as err:
-                _LOGGER.debug(
-                    "Unable to fetch immediate charging state for %s: %s",
-                    redact_for_log(inverter_sn),
-                    err,
-                )
-                immediate_charging[inverter_sn] = {
-                    "enabled": False,
-                    "end_charge_soc": 0,
-                    "charging_power": 0,
-                }
-
-        return immediate_charging
 
     async def _async_update_data(self) -> SemsData:
         """Fetch data from API endpoint.
@@ -443,12 +290,6 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
                 self.sems_api.getData, self.station_id
             )
 
-            energy_storage_cabinets = await self._async_get_energy_storage_cabinets(
-                data_result
-            )
-            batteries = await self._async_get_battery_functions(energy_storage_cabinets)
-            immediate_charging = await self._async_get_immediate_charging(batteries)
-
         except SemsRateLimitedError as err:
             raise UpdateFailed(
                 f"SEMS API rate limited (retry after {err.retry_after}s)"
@@ -460,6 +301,7 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
 
             inverters = data_result.get("inverter")
             inverters_by_sn: dict[str, dict[str, Any]] = {}
+            batteries_by_sn: dict[str, dict[str, Any]] = {}
             if not inverters or not isinstance(inverters, list):
                 raise UpdateFailed(
                     "Error communicating with API: invalid or missing inverter data. See debug logs."
@@ -482,6 +324,20 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
                     redact_for_log(sn),
                 )
                 inverters_by_sn[sn] = inverter_full
+
+                raw_batteries = inverter_full.get("more_batterys")
+                if isinstance(raw_batteries, list):
+                    for index, raw_battery in enumerate(raw_batteries, start=1):
+                        if not isinstance(raw_battery, dict):
+                            continue
+                        battery_sn = raw_battery.get("batterysnmain")
+                        if not isinstance(battery_sn, str) or not battery_sn:
+                            continue
+                        batteries_by_sn[battery_sn] = {
+                            **raw_battery,
+                            "name": f"Battery {index}",
+                            "inverter_serial": sn,
+                        }
 
             station_info = data_result.get("info")
             station_name = None
@@ -509,6 +365,7 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
             mqtt_connection_state = "disconnected"
             mqtt_is_connected = False
             mqtt_connection_failures = 0
+            mqtt_last_message_received_at = None
             if (
                 self.config_entry is not None
                 and hasattr(self.config_entry, "runtime_data")
@@ -518,14 +375,19 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
                 mqtt_connection_state = mqtt_listener.connection_state
                 mqtt_is_connected = mqtt_listener.is_connected
                 mqtt_connection_failures = mqtt_listener.connection_failures
+                mqtt_last_message_received_at = mqtt_listener.last_message_received_at
+
+            station["mqtt_connection_state"] = mqtt_connection_state
+            station["mqtt_is_connected"] = mqtt_is_connected
+            station["mqtt_connection_failures"] = mqtt_connection_failures
+            station["mqtt_last_message_received_at"] = mqtt_last_message_received_at
 
             data = SemsData(
                 inverters=inverters_by_sn,
                 station=station,
-                batteries=batteries,
+                batteries=batteries_by_sn or None,
                 powerflow=powerflow,
                 currency=currency,
-                immediate_charging=immediate_charging,
                 station_id=self.station_id,
                 station_name=station_name,
                 mqtt_connection_state=mqtt_connection_state,
@@ -553,6 +415,29 @@ class SemsDataUpdateCoordinator(DataUpdateCoordinator[SemsData]):
         powerflow = dict(self.data.powerflow or {})
         powerflow.update(update)
         self.async_set_updated_data(replace(self.data, powerflow=powerflow))
+
+    @callback
+    def async_apply_mqtt_status_update(
+        self,
+        connection_state: str,
+        is_connected: bool,
+        connection_failures: int,
+        last_message_received_at: datetime | None,
+    ) -> None:
+        """Publish MQTT diagnostics on the station device."""
+        if self.data is None:
+            return
+
+        station = dict(self.data.station or {})
+        station.update(
+            {
+                "mqtt_connection_state": connection_state,
+                "mqtt_is_connected": is_connected,
+                "mqtt_connection_failures": connection_failures,
+                "mqtt_last_message_received_at": last_message_received_at,
+            }
+        )
+        self.async_set_updated_data(replace(self.data, station=station))
 
 
 # Type alias to make type inference working for pylance

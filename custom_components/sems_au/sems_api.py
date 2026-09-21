@@ -5,7 +5,8 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any
 
 import requests
 from homeassistant import exceptions
@@ -15,27 +16,16 @@ from .const import DEFAULT_SEMS_REGION, SEMS_REGIONS, redact_for_log, redact_val
 
 _LOGGER = logging.getLogger(__name__)
 
-_GetPowerStationIdByOwnerURLPart = "/PowerStation/GetPowerStationIdByOwner"
 _PowerStationURLPart = "/v3/PowerStation/GetMonitorDetailByPowerstationId"
-_PowerControlURLPart = "/PowerStation/SaveRemoteControlInverter"
 _EnableSecondDataURLPart = "/sems-plant/api/second-data/enable"
 _MqttConfigURLPart = "/sems-plant/api/second-data/config"
+_StationsPageURLPart = "/sems-plant/api/portal/stations/page"
 _RequestTimeout = 30  # seconds
 _RateLimitRetryAfterSeconds = 300
+_StationsPageSize = 100
 
 _SuccessCodes = {0, "0", "00000"}
 _RateLimitCode = "GY0429"
-
-_DefaultHeaders = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-    "token": '{"version":"3.1.1","client":"ios","language":"en"}',
-}
-
-_NewLoginHeaders = {
-    "Content-Type": "application/json",
-    "Accept": "application/json, */*;q=0.5",
-}
 
 _NewSEMSPlusWebLoginHeaders = {
     "Content-Type": "application/json",
@@ -44,7 +34,12 @@ _NewSEMSPlusWebLoginHeaders = {
 }
 
 
-type LoginMode = Literal["new", "web"]
+@dataclass(frozen=True, slots=True)
+class SemsStation:
+    """A station available to the authenticated SEMS account."""
+
+    station_id: str
+    name: str
 
 
 class SemsApi:
@@ -66,7 +61,6 @@ class SemsApi:
         self._username = username
         self._password = password
         self._token: dict[str, Any] | None = None
-        self._web_token: dict[str, Any] | None = None  # Used for SEMS+ web APIs
 
     def test_authentication(self) -> bool:
         """Test if we can authenticate with the host."""
@@ -259,13 +253,9 @@ class SemsApi:
         url_part: str,
         renewToken: bool,
         operation_name: str,
-        is_web: bool = False,
     ) -> tuple[str, dict[str, str]] | None:
         """Return the request URL and headers for an authenticated call."""
-        if is_web:
-            token = self._web_token
-        else:
-            token = self._token
+        token = self._token
 
         if token is None or renewToken:
             _LOGGER.debug(
@@ -273,14 +263,8 @@ class SemsApi:
                 redact_for_log(token),
                 renewToken,
             )
-            if is_web:
-                self._web_token = self._get_new_login_token(
-                    self._username, self._password
-                )
-                token = self._web_token
-            else:
-                self._token = self.getLoginToken(self._username, self._password)
-                token = self._token
+            self._token = self.getLoginToken(self._username, self._password)
+            token = self._token
 
         if token is None:
             _LOGGER.error("Failed to obtain API token")
@@ -328,7 +312,6 @@ class SemsApi:
         self,
         json_response: dict[str, Any],
         token_data: dict[str, Any],
-        login_mode: LoginMode,
         fallback_api_url: str | None,
     ) -> str | None:
         """Resolve API URL from login response with optional fallback."""
@@ -343,14 +326,14 @@ class SemsApi:
         if fallback_api_url is None:
             _LOGGER.error(
                 "SEMS %s login response missing api field: keys=%s",
-                login_mode,
+                "web",
                 list(json_response.keys()),
             )
             return None
 
         _LOGGER.debug(
             "SEMS %s login response missing api field, falling back to %s",
-            login_mode,
+            "web",
             fallback_api_url,
         )
         return fallback_api_url
@@ -358,7 +341,6 @@ class SemsApi:
     def _extract_login_token(
         self,
         json_response: dict[str, Any] | None,
-        login_mode: LoginMode,
         operation_name: str,
         fallback_api_url: str | None = None,
     ) -> dict[str, Any] | None:
@@ -370,7 +352,7 @@ class SemsApi:
         if code not in _SuccessCodes:
             _LOGGER.warning(
                 "SEMS %s login rejected during %s: code=%s msg=%s description=%s api=%s data_type=%s response=%s",
-                login_mode,
+                "web",
                 operation_name,
                 code,
                 json_response.get("msg"),
@@ -384,8 +366,7 @@ class SemsApi:
         token_data = json_response.get("data")
         if not isinstance(token_data, dict) or not token_data:
             _LOGGER.error(
-                "SEMS %s login response data was missing or invalid: data_type=%s, keys=%s",
-                login_mode,
+                "SEMS+ login response data was missing or invalid: data_type=%s, keys=%s",
                 type(token_data).__name__,
                 list(json_response.keys()),
             )
@@ -394,7 +375,6 @@ class SemsApi:
         api_url = self._resolve_login_api_url(
             json_response,
             token_data,
-            login_mode,
             fallback_api_url,
         )
         if api_url is None:
@@ -405,14 +385,13 @@ class SemsApi:
 
         if not token_dict.get("token"):
             _LOGGER.warning(
-                "SEMS %s login response missing valid token field - incomplete token received",
-                login_mode,
+                "SEMS+ login response missing valid token field - incomplete token received",
             )
             return None
 
         _LOGGER.debug(
             "SEMS - API Token received via %s login: %s",
-            login_mode,
+            "web",
             redact_for_log(token_dict),
         )
 
@@ -422,7 +401,6 @@ class SemsApi:
         self, userName: str, password: str
     ) -> dict[str, Any] | None:
         """Get a token from the SEMS+ login endpoint."""
-        login_mode: LoginMode = "web"
         operation_name = "SEMS+ Web login API call"
         _LOGGER.debug("SEMS - Trying %s", operation_name)
         login_data = {
@@ -432,8 +410,6 @@ class SemsApi:
             "isChinese": False,
             "isLocal": False,
         }
-        headers = _NewLoginHeaders
-
         headers = {
             **_NewSEMSPlusWebLoginHeaders,
             "X-Signature": self._generate_signature({}),
@@ -448,7 +424,6 @@ class SemsApi:
         )
         return self._extract_login_token(
             json_response,
-            login_mode,
             operation_name,
             self._region.gateway_api_url,
         )
@@ -483,7 +458,6 @@ class SemsApi:
         maxTokenRetries: int = 2,
         operation_name: str = "API call",
         method: str = "POST",
-        is_web: bool = False,
         retry_on_api_error: bool = True,
         return_raw_response: bool = False,
     ) -> Any | None:
@@ -501,7 +475,6 @@ class SemsApi:
             url_part,
             renewToken,
             operation_name,
-            is_web=is_web,
         )
         if context is None:
             return None
@@ -533,7 +506,6 @@ class SemsApi:
                     maxTokenRetries - 1,
                     operation_name,
                     method,
-                    is_web,
                     retry_on_api_error,
                     return_raw_response,
                 )
@@ -541,7 +513,7 @@ class SemsApi:
             # Response is valid, return the data
             if return_raw_response:
                 return json_response
-            return json_response.get("data", {}) if is_web else json_response["data"]
+            return json_response.get("data", {})
 
         except SemsRateLimitedError as exception:
             _LOGGER.debug(
@@ -554,17 +526,61 @@ class SemsApi:
             _LOGGER.error("Unable to complete %s: %s", operation_name, exception)
             return None
 
-    def getPowerStationIds(
-        self, renewToken: bool = False, maxTokenRetries: int = 2
-    ) -> Any | None:
-        """Get the power station ids from the SEMS API."""
-        return self._make_api_call(
-            _GetPowerStationIdByOwnerURLPart,
-            data=None,
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name="getPowerStationIds API call",
-        )
+    def get_stations(
+        self, renew_token: bool = False, max_token_retries: int = 2
+    ) -> list[SemsStation]:
+        """Return all named stations available to the authenticated account."""
+        stations: list[SemsStation] = []
+        seen_station_ids: set[str] = set()
+        page = 1
+
+        while True:
+            result = self._make_api_call(
+                _StationsPageURLPart,
+                data=json.dumps({"current": page, "size": _StationsPageSize}),
+                renewToken=renew_token,
+                maxTokenRetries=max_token_retries,
+                operation_name="getStations API call",
+            )
+            if not isinstance(result, dict):
+                return []
+
+            raw_stations = result.get("dataList")
+            if not isinstance(raw_stations, list):
+                return []
+
+            added_on_page = 0
+            for raw_station in raw_stations:
+                if not isinstance(raw_station, dict):
+                    continue
+                station_id = raw_station.get("id")
+                name = raw_station.get("name")
+                if not isinstance(station_id, str) or not station_id:
+                    continue
+                if station_id in seen_station_ids:
+                    continue
+
+                seen_station_ids.add(station_id)
+                stations.append(
+                    SemsStation(
+                        station_id=station_id,
+                        name=name.strip()
+                        if isinstance(name, str) and name.strip()
+                        else f"Station {station_id}",
+                    )
+                )
+                added_on_page += 1
+
+            total = result.get("total")
+            if (
+                not raw_stations
+                or added_on_page == 0
+                or not isinstance(total, int)
+                or len(stations) >= total
+            ):
+                return stations
+
+            page += 1
 
     def getData(
         self, powerStationId: str, renewToken: bool = False, maxTokenRetries: int = 2
@@ -590,7 +606,6 @@ class SemsApi:
             renewToken=renewToken,
             maxTokenRetries=maxTokenRetries,
             operation_name="getMqttConfig API call",
-            is_web=True,
         )
         config = result if isinstance(result, dict) else {}
         _LOGGER.debug("SEMS MQTT configuration: %s", redact_for_log(config))
@@ -606,7 +621,6 @@ class SemsApi:
             renewToken=renewToken,
             maxTokenRetries=maxTokenRetries,
             operation_name="enableSecondData API call",
-            is_web=True,
             retry_on_api_error=False,
             return_raw_response=True,
         )
@@ -632,278 +646,6 @@ class SemsApi:
             result.get("description"),
         )
         return False
-
-    def getEnergyStorageIntegratedCabinets(
-        self,
-        powerStationId: str,
-        serialNumber: str,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ) -> list[dict[str, Any]]:
-        """Get the energy storage integrated cabinets from the SEMS API."""
-        result = self._make_api_call(
-            f"/sems-plant/api/equipments/{serialNumber}/relatedDevices?sn={serialNumber}&deviceType=ENERGY_STORAGE_INTEGRATED_CABINET&pwId={powerStationId}",
-            method="GET",
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name="getEnergyStorageIntegratedCabinets API call",
-            is_web=True,
-        )
-
-        return result if isinstance(result, list) else []
-
-    def getBatteryGeneralFunctions(
-        self,
-        serialNumber: str,
-        batIndex: int,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ) -> dict[str, Any]:
-        """Get the battery general functions from the SEMS API."""
-        data = json.dumps(
-            {
-                "batIndex": str(batIndex),
-                "menuCode": 1,
-                "module": "GENERAL_FUNCTIONS",
-                "sn": serialNumber,
-            }
-        )
-        result = self._make_api_call(
-            "/sems-remote/api/v2/address/remote/getDeviceFunctionTabMenus",
-            method="POST",
-            data=data,
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name="getBatteryGeneralFunctions API call",
-            is_web=True,
-            retry_on_api_error=False,
-        )
-        return result if isinstance(result, dict) else {}
-
-    def getBatteryImmediateChargingStates(
-        self, serialNumber: str, renewToken: bool = False, maxTokenRetries: int = 2
-    ) -> dict[str, Any]:
-        """Get the battery immediate charging states from the SEMS API."""
-        data = json.dumps(
-            {
-                "sn": serialNumber,
-                "addresses": ["47545", "47545", "47546", "47603"],
-                "addrFuncMap": {
-                    "47545": "2013217017330515970",
-                    "47546": "1991791639537946635",
-                    "47603": "1991791639537946636",
-                },
-            }
-        )
-
-        result = self._make_api_call(
-            "/sems-remote/api/v1/address/remote/get-cache-device-function-parameters",
-            method="POST",
-            data=data,
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name="getBatteryImmediateChargingStates API call",
-            is_web=True,
-            retry_on_api_error=False,
-        )
-        return result if isinstance(result, dict) else {}
-
-    def stopImmediateCharging(
-        self,
-        plant_id: str,
-        serial_number: str,
-        device_name: str,
-        function_address: str,
-        function_id: str,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ):
-        self.setDeviceFunctionParameters(
-            plant_id,
-            serial_number,
-            device_name,
-            {function_address: 0},
-            {"stop_charging": "remote_Switch_off"},
-            {function_address: function_id},
-            renewToken,
-            maxTokenRetries,
-        )
-
-    def startImmediateCharging(
-        self,
-        plant_id: str,
-        serial_number: str,
-        device_name: str,
-        function_address: str,
-        function_id: str,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ):
-        self.setDeviceFunctionParameters(
-            plant_id,
-            serial_number,
-            device_name,
-            {function_address: 1},
-            {"immediate_charge": "on"},
-            {function_address: function_id},
-            renewToken,
-            maxTokenRetries,
-        )
-
-    def setImmediateChargingEndSoC(
-        self,
-        plant_id: str,
-        serial_number: str,
-        device_name: str,
-        end_soc: int,
-        function_address: str,
-        function_id: str,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ):
-        self.setDeviceFunctionParameters(
-            plant_id,
-            serial_number,
-            device_name,
-            {function_address: end_soc},
-            {"end_charge_soc": end_soc},
-            {function_address: function_id},
-            renewToken,
-            maxTokenRetries,
-        )
-
-    def setImmediateChargingChargingPower(
-        self,
-        plant_id: str,
-        serial_number: str,
-        device_name: str,
-        charging_power: int,
-        function_address: str,
-        function_id: str,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ):
-        self.setDeviceFunctionParameters(
-            plant_id,
-            serial_number,
-            device_name,
-            {function_address: charging_power},
-            {"bat_immediate_charge_power": charging_power},
-            {function_address: function_id},
-            renewToken,
-            maxTokenRetries,
-        )
-
-    def setDeviceFunctionParameters(
-        self,
-        plant_id: str,
-        serial_number: str,
-        device_name: str,
-        address_map: dict[str, Any],
-        control_item_logs: dict[str, Any],
-        addr_func_map: dict[str, str],
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ):
-        data = {
-            "sn": serial_number,
-            "addressMap": address_map,
-            "addrFuncMap": addr_func_map,
-            "controlItemLogs": control_item_logs,
-            "waitingForDevice": True,
-            "plantId": plant_id,
-            "deviceName": device_name,
-        }
-
-        self._make_api_call(
-            "/sems-remote/api/v1/address/remote/setDeviceFunctionParameters",
-            method="POST",
-            data=json.dumps(data),
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name="setDeviceFunctionParameters API call",
-            is_web=True,
-        )
-
-    def _make_control_api_call(
-        self,
-        data: dict[str, Any],
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-        operation_name: str = "Control API call",
-    ) -> bool:
-        """Make a control API call with different response handling."""
-        _LOGGER.debug("SEMS - Making %s", operation_name)
-        if maxTokenRetries <= 0:
-            _LOGGER.info("SEMS - Maximum token fetch tries reached, aborting for now")
-            raise OutOfRetries
-
-        context = self._get_authenticated_request_context(
-            _PowerControlURLPart,
-            renewToken,
-            operation_name,
-        )
-        if context is None:
-            return False
-
-        api_url, headers = context
-
-        try:
-            # Control API uses different validation (HTTP status code), so don't validate JSON response code
-            self._make_http_request(
-                api_url,
-                headers,
-                json_data=data,
-                operation_name=operation_name,
-                validate_code=False,
-            )
-
-            # For control API, any successful HTTP response (status 200) means success
-            # The _make_http_request already validated HTTP status via raise_for_status()
-            return True
-
-        except requests.HTTPError as e:
-            if hasattr(e.response, "status_code") and e.response.status_code != 200:
-                _LOGGER.warning(
-                    "%s not successful, retrying with new token, %s retries remaining",
-                    operation_name,
-                    maxTokenRetries,
-                )
-                return self._make_control_api_call(
-                    data, True, maxTokenRetries - 1, operation_name
-                )
-            _LOGGER.error("Unable to execute %s: %s", operation_name, e)
-            return False
-        except SemsRateLimitedError as exception:
-            _LOGGER.warning("Unable to execute %s: %s", operation_name, exception)
-            return False
-        except (requests.RequestException, ValueError, KeyError) as exception:
-            _LOGGER.error("Unable to execute %s: %s", operation_name, exception)
-            return False
-
-    def change_status(
-        self,
-        inverterSn: str,
-        status: str | int,
-        renewToken: bool = False,
-        maxTokenRetries: int = 2,
-    ) -> None:
-        """Schedule the downtime of the station."""
-        data = {
-            "InverterSN": inverterSn,
-            "InverterStatusSettingMark": "1",
-            "InverterStatus": str(status),
-        }
-
-        success = self._make_control_api_call(
-            data,
-            renewToken=renewToken,
-            maxTokenRetries=maxTokenRetries,
-            operation_name=f"power control command for inverter {inverterSn}",
-        )
-
-        if not success:
-            _LOGGER.error("Power control command failed after all retries")
 
 
 class OutOfRetries(exceptions.HomeAssistantError):

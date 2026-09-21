@@ -23,18 +23,8 @@ MOCK_POWER_STATION_ID = "12345678-1234-5678-9abc-123456789abc"
 
 @contextmanager
 def _mock_no_battery_api(data: dict):
-    """Mock coordinator API calls for payloads without battery controls."""
-    with (
-        patch("custom_components.sems_au.sems_api.SemsApi.getData", return_value=data),
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.getEnergyStorageIntegratedCabinets",
-            return_value=[],
-        ),
-        patch(
-            "custom_components.sems_au.sems_api.SemsApi.getBatteryGeneralFunctions",
-            return_value={},
-        ),
-    ):
+    """Mock the station detail API call."""
+    with patch("custom_components.sems_au.sems_api.SemsApi.getData", return_value=data):
         yield
 
 
@@ -139,13 +129,13 @@ async def test_all_entities_exist(
         await hass.async_block_till_done()
 
     coordinator = entry.runtime_data.coordinator
-    inverter_sn = next(iter(coordinator.data.inverters))
 
     expected_sensor_unique_ids = {
         sensor.unique_id for sensor in sensor_options_for_data(coordinator.data)
     }
-    expected_switch_unique_ids = {f"{MOCK_POWER_STATION_ID}-{inverter_sn}-switch"}
-    expected_unique_ids = expected_sensor_unique_ids | expected_switch_unique_ids
+    expected_unique_ids = expected_sensor_unique_ids | {
+        f"{MOCK_POWER_STATION_ID}:station:mqtt_connected"
+    }
 
     ent_reg = er.async_get(hass)
     actual_unique_ids = {
@@ -179,11 +169,10 @@ async def test_exact_unique_ids_single_inverter_fixture(
         await hass.async_block_till_done()
 
     coordinator = entry.runtime_data.coordinator
-    sn = next(iter(coordinator.data.inverters))
     expected_unique_ids = {
         sensor.unique_id for sensor in sensor_options_for_data(coordinator.data)
     }
-    expected_unique_ids.add(f"{MOCK_POWER_STATION_ID}-{sn}-switch")
+    expected_unique_ids.add(f"{MOCK_POWER_STATION_ID}:station:mqtt_connected")
 
     ent_reg = er.async_get(hass)
     actual_unique_ids = {
@@ -217,11 +206,10 @@ async def test_exact_unique_ids_powerflow_fixture(
         await hass.async_block_till_done()
 
     coordinator = entry.runtime_data.coordinator
-    sn = next(iter(coordinator.data.inverters))
     expected_unique_ids = {
         sensor.unique_id for sensor in sensor_options_for_data(coordinator.data)
     }
-    expected_unique_ids.add(f"{MOCK_POWER_STATION_ID}-{sn}-switch")
+    expected_unique_ids.add(f"{MOCK_POWER_STATION_ID}:station:mqtt_connected")
 
     ent_reg = er.async_get(hass)
     actual_unique_ids = {

@@ -6,8 +6,14 @@
         "data": {
           "username": "[%key:common::config_flow::data::username%]",
           "password": "[%key:common::config_flow::data::password%]",
-          "region": "SEMS region",
-          "scan_interval": "Update Interval (seconds)"
+          "region": "SEMS region"
+        }
+      },
+      "station": {
+        "title": "Select a station",
+        "description": "Choose the SEMS station to add to Home Assistant.",
+        "data": {
+          "powerstation_id": "Station"
         }
       }
     },
@@ -15,7 +21,9 @@
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
       "unknown": "[%key:common::config_flow::error::unknown%]",
-      "no_stations_found": "No power stations found for this account"
+      "no_stations_found": "No stations were found for this account",
+      "all_stations_configured": "All stations for this account are already configured",
+      "invalid_station": "Select an available station"
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"

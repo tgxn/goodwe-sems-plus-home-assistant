@@ -11,11 +11,12 @@ A Home Assistant custom integration for Australian GoodWe accounts hosted on
 
 ## Features
 
-- Imports GoodWe SEMS+ power stations and inverters into Home Assistant.
+- Creates one Home Assistant config entry for each selected SEMS+ station.
+- Groups station, inverter, and battery telemetry under the appropriate devices.
 - Provides generation, consumption, grid, battery, energy, and inverter sensors
   when those values are available from SEMS+ Australia.
-- Provides controls for supported inverter charging settings.
-- Polls the SEMS+ cloud API once per minute by default.
+- Polls the SEMS+ cloud API every five minutes and augments station power-flow
+  sensors with the live MQTT feed between polls.
 
 This integration depends on undocumented GoodWe cloud APIs. GoodWe may change
 them without notice, and some entities may not be available for every inverter.
@@ -45,16 +46,11 @@ restart Home Assistant.
 2. Select **Add integration** and search for **GoodWe SEMS+ Australia**.
 3. Sign in with the credentials used at
    [SEMS+ Australia](https://au-semsplus.goodwe.com/).
+4. Select the station to add. Run **Add integration** again to add another
+   station from the same account.
 
-The integration discovers the first power station associated with the account.
-A read-only visitor account is recommended when inverter controls are not
-needed.
-
-## Inverter Controls
-
-Control entities use undocumented SEMS+ endpoints. Commands may take several
-minutes to reach an inverter. Only enable and use these controls if you
-understand their effect on your installation.
+A read-only visitor account is recommended. This integration does not expose
+inverter or battery controls.
 
 ## Troubleshooting
 
