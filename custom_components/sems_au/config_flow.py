@@ -121,9 +121,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             station_id = user_input.get(CONF_STATION_ID)
             station = (
-                self._stations.get(station_id)
-                if isinstance(station_id, str)
-                else None
+                self._stations.get(station_id) if isinstance(station_id, str) else None
             )
             if station is None:
                 errors["base"] = "invalid_station"
