@@ -1,0 +1,23 @@
+[
+  {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Test Station",
+    "status": 1,
+    "installedPower": 5.0,
+    "isCollected": true,
+    "isShared": true,
+    "powerStationTypeWeb": 2,
+    "pvInstallP": 6.0,
+    "createTime": "2026-01-01 00:00:00",
+    "productionToday": 10.0,
+    "proCharStatsToday": 4.0,
+    "proDischarStatsToday": 3.0,
+    "productionTotal": 1000.0,
+    "proCharStatsTotal": 400.0,
+    "proDischarStatsTotal": 300.0,
+    "pSystem": 0,
+    "fullHourToday": 4.0,
+    "specificYield": 1.0,
+    "timeZone": "UTC+00:00"
+  }
+]

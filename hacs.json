@@ -1,8 +1,10 @@
 {
-  "name": "GoodWe SEMS+ (AU)",
-  "country": ["AU"],
+  "name": "GoodWe SEMS+ Integration",
+  "country": [
+    "AU"
+  ],
   "content_in_root": false,
   "zip_release": true,
-  "filename": "sems_au.zip",
+  "filename": "sems_plus.zip",
   "homeassistant": "2026.3.0"
 }

@@ -1,0 +1,379 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Sign in with your GoodWe SEMS+ account. A read-only visitor account is recommended.",
+        "data": {
+          "username": "[%key:common::config_flow::data::username%]",
+          "password": "[%key:common::config_flow::data::password%]",
+          "region": "SEMS+ region"
+        }
+      },
+      "station": {
+        "title": "Select a station",
+        "description": "Choose the SEMS+ station to add to Home Assistant.",
+        "data": {
+          "station_id": "Station"
+        }
+      },
+      "settings": {
+        "title": "{station}",
+        "description": "These devices will be added:\n\n{devices}\n\nChoose how often SEMS+ is polled. Live power updates arrive over the live feed every few seconds.",
+        "data": {
+          "poll_interval": "Poll interval",
+          "fallback_interval": "Live fallback interval",
+          "metadata_interval": "Metadata refresh interval"
+        },
+        "data_description": {
+          "poll_interval": "How often energy totals and device values are fetched.",
+          "fallback_interval": "How often live power is polled while the live (MQTT) feed is disconnected.",
+          "metadata_interval": "How often firmware, capacities and other slow-changing details are fetched."
+        }
+      },
+      "reauth_confirm": {
+        "title": "[%key:common::config_flow::title::reauth%]",
+        "description": "SEMS+ rejected the password for {username}.",
+        "data": {
+          "password": "[%key:common::config_flow::data::password%]"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "no_stations_found": "No stations were found for this account",
+      "all_stations_configured": "All stations for this account are already configured",
+      "invalid_station": "Select an available station"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update intervals",
+        "data": {
+          "poll_interval": "Poll interval",
+          "fallback_interval": "Live fallback interval",
+          "metadata_interval": "Metadata refresh interval"
+        },
+        "data_description": {
+          "poll_interval": "How often energy totals and device values are fetched.",
+          "fallback_interval": "How often live power is polled while the live (MQTT) feed is disconnected.",
+          "metadata_interval": "How often firmware, capacities and other slow-changing details are fetched."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "solar_power": {
+        "name": "Solar power"
+      },
+      "load_power": {
+        "name": "Home load power"
+      },
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "grid_import_power": {
+        "name": "Grid import power"
+      },
+      "grid_export_power": {
+        "name": "Grid export power"
+      },
+      "battery_power": {
+        "name": "Battery power"
+      },
+      "battery_charge_power": {
+        "name": "Battery charging power"
+      },
+      "battery_discharge_power": {
+        "name": "Battery discharging power"
+      },
+      "inverter_power": {
+        "name": "Inverter output power"
+      },
+      "pv_input_power": {
+        "name": "PV input power"
+      },
+      "reactive_power": {
+        "name": "Reactive power"
+      },
+      "grid_frequency": {
+        "name": "Grid frequency"
+      },
+      "power_factor": {
+        "name": "Power factor"
+      },
+      "battery_soc": {
+        "name": "Battery state of charge"
+      },
+      "last_live_update": {
+        "name": "Last live update"
+      },
+      "solar_energy_today": {
+        "name": "Solar energy today"
+      },
+      "solar_energy_month": {
+        "name": "Solar energy this month"
+      },
+      "grid_import_today": {
+        "name": "Grid import today"
+      },
+      "grid_import_month": {
+        "name": "Grid import this month"
+      },
+      "grid_export_today": {
+        "name": "Grid export today"
+      },
+      "grid_export_month": {
+        "name": "Grid export this month"
+      },
+      "load_energy_today": {
+        "name": "Home consumption today"
+      },
+      "load_energy_month": {
+        "name": "Home consumption this month"
+      },
+      "self_use_energy_today": {
+        "name": "Solar self-use today"
+      },
+      "self_use_energy_month": {
+        "name": "Solar self-use this month"
+      },
+      "battery_charge_today": {
+        "name": "Battery charge today"
+      },
+      "battery_charge_month": {
+        "name": "Battery charge this month"
+      },
+      "battery_charge_total": {
+        "name": "Battery charge total"
+      },
+      "battery_discharge_today": {
+        "name": "Battery discharge today"
+      },
+      "battery_discharge_month": {
+        "name": "Battery discharge this month"
+      },
+      "battery_discharge_total": {
+        "name": "Battery discharge total"
+      },
+      "self_sufficiency_today": {
+        "name": "Self-sufficiency today"
+      },
+      "self_use_rate_today": {
+        "name": "Solar self-use rate today"
+      },
+      "income_today": {
+        "name": "Income today"
+      },
+      "full_load_hours_today": {
+        "name": "Full load hours today"
+      },
+      "inverter_capacity": {
+        "name": "Inverter capacity"
+      },
+      "pv_capacity": {
+        "name": "PV capacity"
+      },
+      "battery_capacity": {
+        "name": "Battery capacity"
+      },
+      "battery_soh": {
+        "name": "Battery state of health"
+      },
+      "battery_cell_temperature_max": {
+        "name": "Battery max cell temperature"
+      },
+      "battery_cell_temperature_min": {
+        "name": "Battery min cell temperature"
+      },
+      "battery_cell_voltage_max": {
+        "name": "Battery max cell voltage"
+      },
+      "battery_cell_voltage_min": {
+        "name": "Battery min cell voltage"
+      },
+      "ac_power": {
+        "name": "AC power"
+      },
+      "backup_power": {
+        "name": "Backup power"
+      },
+      "grid_voltage": {
+        "name": "Grid voltage"
+      },
+      "grid_current": {
+        "name": "Grid current"
+      },
+      "backup_voltage": {
+        "name": "Backup voltage"
+      },
+      "backup_current": {
+        "name": "Backup current"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "working_hours": {
+        "name": "Working hours"
+      },
+      "insulation_resistance": {
+        "name": "Insulation resistance"
+      },
+      "rated_power": {
+        "name": "Rated power"
+      },
+      "pv_energy_today": {
+        "name": "PV energy today"
+      },
+      "pv_energy_month": {
+        "name": "PV energy this month"
+      },
+      "pv_energy_total": {
+        "name": "PV energy total"
+      },
+      "pv_string_power": {
+        "name": "PV string {string} power"
+      },
+      "pv_string_voltage": {
+        "name": "PV string {string} voltage"
+      },
+      "pv_string_current": {
+        "name": "PV string {string} current"
+      },
+      "soc": {
+        "name": "State of charge"
+      },
+      "soh": {
+        "name": "State of health"
+      },
+      "power": {
+        "name": "Power"
+      },
+      "charge_power": {
+        "name": "Charging power"
+      },
+      "discharge_power": {
+        "name": "Discharging power"
+      },
+      "voltage": {
+        "name": "Voltage"
+      },
+      "max_charge_power": {
+        "name": "Max charge power"
+      },
+      "max_discharge_power": {
+        "name": "Max discharge power"
+      },
+      "cell_temperature_max": {
+        "name": "Max cell temperature"
+      },
+      "cell_temperature_min": {
+        "name": "Min cell temperature"
+      },
+      "cell_voltage_max": {
+        "name": "Max cell voltage"
+      },
+      "cell_voltage_min": {
+        "name": "Min cell voltage"
+      },
+      "cell_count": {
+        "name": "Cells in series"
+      },
+      "charge_today": {
+        "name": "Charge today"
+      },
+      "charge_month": {
+        "name": "Charge this month"
+      },
+      "charge_total": {
+        "name": "Charge total"
+      },
+      "discharge_today": {
+        "name": "Discharge today"
+      },
+      "discharge_month": {
+        "name": "Discharge this month"
+      },
+      "discharge_total": {
+        "name": "Discharge total"
+      },
+      "communication_mode": {
+        "name": "Communication mode"
+      },
+      "signal_strength": {
+        "name": "Signal strength"
+      },
+      "battery_state": {
+        "name": "Battery state",
+        "state": {
+          "charging": "Charging",
+          "discharging": "Discharging",
+          "idle": "Idle"
+        }
+      },
+      "grid_state": {
+        "name": "Grid state",
+        "state": {
+          "importing": "Importing",
+          "exporting": "Exporting",
+          "idle": "Idle"
+        }
+      },
+      "station_status": {
+        "name": "Status",
+        "state": {
+          "working": "Working",
+          "waiting": "Waiting",
+          "fault": "Fault",
+          "offline": "Offline",
+          "unknown": "Unknown"
+        }
+      },
+      "battery_system_status": {
+        "name": "Battery system status",
+        "state": {
+          "discharging": "Discharging",
+          "unknown": "Unknown"
+        }
+      },
+      "device_status": {
+        "name": "Status",
+        "state": {
+          "running": "Running",
+          "online": "Online",
+          "unknown": "Unknown"
+        }
+      },
+      "live_feed_state": {
+        "name": "Live feed state",
+        "state": {
+          "disconnected": "Disconnected",
+          "connecting": "Connecting",
+          "connected": "Connected",
+          "failed": "Failed"
+        }
+      },
+      "last_live_message": {
+        "name": "Last live feed message"
+      },
+      "live_feed_failures": {
+        "name": "Live feed connection failures"
+      }
+    },
+    "binary_sensor": {
+      "live_feed_connected": {
+        "name": "Live feed"
+      },
+      "on_grid": {
+        "name": "On grid"
+      }
+    }
+  }
+}

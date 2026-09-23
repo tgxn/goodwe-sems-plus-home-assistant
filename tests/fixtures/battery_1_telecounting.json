@@ -1,0 +1,158 @@
+[
+  {
+    "code": "telecounting_real",
+    "alias": "realtime_data",
+    "factors": [
+      {
+        "code": "soc",
+        "data": "50",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "%",
+        "alias": "soc",
+        "supportCurve": false
+      },
+      {
+        "code": "pBat",
+        "data": "0.25",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kW",
+        "alias": "power",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "telecounting_today",
+    "alias": "day",
+    "factors": [
+      {
+        "code": "proCharStatsToday",
+        "data": "2",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "charge_quantity",
+        "supportCurve": false
+      },
+      {
+        "code": "proDischarStatsToday",
+        "data": "1.5",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "energy_discharged",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "telecounting_week",
+    "alias": "week",
+    "factors": [
+      {
+        "code": "proCharStatsWeek",
+        "data": "10",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "charge_quantity",
+        "supportCurve": false
+      },
+      {
+        "code": "proDischarStatsWeek",
+        "data": "7.5",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "energy_discharged",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "telecounting_month",
+    "alias": "month",
+    "factors": [
+      {
+        "code": "proCharStatsMonth",
+        "data": "20",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "charge_quantity",
+        "supportCurve": false
+      },
+      {
+        "code": "proDischarStatsMonth",
+        "data": "15",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "energy_discharged",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "telecounting_year",
+    "alias": "year",
+    "factors": [
+      {
+        "code": "proCharStatsYear",
+        "data": "200",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "charge_quantity",
+        "supportCurve": false
+      },
+      {
+        "code": "proDischarStatsYear",
+        "data": "150",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "energy_discharged",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "telecounting_lifetime",
+    "alias": "total",
+    "factors": [
+      {
+        "code": "proCharStatsTotal",
+        "data": "200",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "charge_quantity",
+        "supportCurve": false
+      },
+      {
+        "code": "proDischarStatsTotal",
+        "data": "150",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kWh",
+        "alias": "energy_discharged",
+        "supportCurve": false
+      }
+    ]
+  }
+]

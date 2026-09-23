@@ -1,0 +1,117 @@
+[
+  {
+    "code": "picture",
+    "data": "cabinet",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "图片地址"
+  },
+  {
+    "code": "gridConnStu",
+    "data": "1",
+    "dataType": "NUMERIC",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "alias": "并离网状态"
+  },
+  {
+    "code": "deviceName",
+    "data": "All-in-One 1",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "name_1"
+  },
+  {
+    "code": "sn",
+    "data": "INV0000000000001",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "serial_number_1"
+  },
+  {
+    "code": "deviceType",
+    "data": "energy_storage_cabinet",
+    "dataType": "DICTIONARY",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "type"
+  },
+  {
+    "code": "status",
+    "data": "5",
+    "dataType": "NUMERIC",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "status"
+  },
+  {
+    "code": "modelType",
+    "data": "Test Inverter",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "model"
+  },
+  {
+    "code": "addTime",
+    "data": "2026-01-01 00:00:00",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "add_time"
+  },
+  {
+    "code": "remark",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "note"
+  },
+  {
+    "code": "safetyVersion",
+    "data": "1.0.0",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "firmware_version"
+  },
+  {
+    "code": "ratedPower",
+    "data": "5",
+    "dataType": "NUMERIC",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "frontendConfig": {
+      "decimalPlaces": 3,
+      "decimalMode": "auto"
+    },
+    "unit": "kW",
+    "alias": "rated_power"
+  },
+  {
+    "code": "bat1MRSn",
+    "data": "BAT0000000000001",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "alias": "mppt1_battery"
+  },
+  {
+    "code": "bat2MRSn",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "alias": "mppt2_battery"
+  },
+  {
+    "code": "isHems",
+    "data": "0",
+    "dataType": "string",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "frontendConfig": {}
+  }
+]
