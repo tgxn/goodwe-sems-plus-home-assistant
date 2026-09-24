@@ -17,7 +17,7 @@ from custom_components.sems_plus.const import (
     CONF_STATION_ID,
     DOMAIN,
 )
-from custom_components.sems_plus.sems_api_v2 import SemsAuthError
+from custom_components.sems_plus.sems_api_v2 import SemsApiError, SemsAuthError
 
 from .conftest import CAPTURE_TIME, STATION_ID
 
@@ -79,6 +79,18 @@ async def test_invalid_auth(
     result = await start_flow(hass)
     assert result["step_id"] == "user"
     assert result["errors"] == {"base": "invalid_auth"}
+    assert result["description_placeholders"] == {"error_detail": "bad password"}
+
+
+async def test_cannot_connect(
+    hass: HomeAssistant, mock_client: dict[str, MagicMock]
+) -> None:
+    """Transport failures show cannot_connect with the reason."""
+    mock_client["login"].side_effect = SemsApiError("timeout")
+    result = await start_flow(hass)
+    assert result["step_id"] == "user"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["description_placeholders"] == {"error_detail": "timeout"}
 
 
 async def test_no_stations(

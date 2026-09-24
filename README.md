@@ -66,12 +66,13 @@ values on its own device, so the station's "Battery power" and a rack's
 | Daily rates and income        | Self-sufficiency today, Solar self-use rate today, Income today                                                                                                                                                                                                                           |
 | Battery system                | Battery system status, Battery state of health, Battery max/min cell temperature, Battery max/min cell voltage                                                                                                                                                                            |
 | Station                       | Status, Full load hours today, Inverter / PV / Battery capacity                                                                                                                                                                                                                           |
-| Diagnostics                   | Live feed (connected), Live feed state, Live feed connection failures, Last live feed message, Last live update                                                                                                                                                                           |
+| Diagnostics                   | MQTT live feed (connected), MQTT live feed status, MQTT connection failures, MQTT messages received, MQTT last message, Last live update                                                                                                                                                  |
 
 The live feed diagnostics show whether the MQTT feed is connected, its state,
-how many connection attempts have failed in a row, when the last live feed
-message arrived, and when live power was last updated from either the live feed
-or the REST fallback.
+how many connection attempts have failed in a row, how many live updates have
+been received (a running total, so its long-term statistics show the message
+rate over time), when the last live feed message arrived, and when live power
+was last updated from either the live feed or the REST fallback.
 
 Sign convention: **Grid power** is positive when importing and negative when
 exporting. **Battery power** is positive when discharging and negative when

@@ -660,6 +660,14 @@ STATION_SENSORS: tuple[SemsStationSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    SemsStationSensorDescription(
+        key="live_feed_messages",
+        translation_key="live_feed_messages",
+        source=SOURCE_CLIENT,
+        client_fn=lambda client: client.mqtt_messages_received,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 )
 
 STATION_BINARY_SENSORS: tuple[SemsStationBinarySensorDescription, ...] = (

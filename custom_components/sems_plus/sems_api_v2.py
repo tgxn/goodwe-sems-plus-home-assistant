@@ -238,6 +238,7 @@ class SemsPlusClient:
         self._mqtt_failures = 0
         self._mqtt_reported: tuple[str, int] = ("disconnected", 0)
         self._mqtt_last_message_at: datetime | None = None
+        self._mqtt_messages = 0
 
     @property
     def region(self) -> SemsRegion:
@@ -661,6 +662,11 @@ class SemsPlusClient:
         """Return when the last live update for the station was received."""
         return self._mqtt_last_message_at
 
+    @property
+    def mqtt_messages_received(self) -> int:
+        """Return how many live updates for the station have been received."""
+        return self._mqtt_messages
+
     def start_mqtt(
         self,
         station_id: str,
@@ -848,6 +854,7 @@ class SemsPlusClient:
             return
 
         self._mqtt_last_message_at = live_data.received_at
+        self._mqtt_messages += 1
         try:
             on_update(live_data)
         except Exception:

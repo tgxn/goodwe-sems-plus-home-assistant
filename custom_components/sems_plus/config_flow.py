@@ -137,6 +137,7 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask for credentials and list the account's stations."""
         errors: dict[str, str] = {}
+        error_detail = ""
         if user_input is not None:
             _LOGGER.debug(
                 "SEMS+ - Validating credentials for %s",
@@ -146,10 +147,14 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 await client.login()
                 stations = await client.get_stations()
-            except SemsAuthError:
+            except SemsAuthError as err:
+                _LOGGER.warning("SEMS+ login failed: %s", err)
                 errors["base"] = "invalid_auth"
-            except SemsApiError:
+                error_detail = str(err)
+            except SemsApiError as err:
+                _LOGGER.warning("SEMS+ request failed: %s", err)
                 errors["base"] = "cannot_connect"
+                error_detail = str(err)
             except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -173,7 +178,10 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_station()
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
+            description_placeholders={"error_detail": error_detail},
         )
 
     async def async_step_station(
@@ -181,6 +189,7 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Select one unconfigured station."""
         errors: dict[str, str] = {}
+        error_detail = ""
         if user_input is not None:
             station_id = user_input.get(CONF_STATION_ID)
             if station_id not in self._stations:
@@ -192,8 +201,10 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
                 assert self._client is not None
                 try:
                     self._devices = await self._client.get_station_devices(station_id)
-                except SemsApiError:
+                except SemsApiError as err:
+                    _LOGGER.warning("SEMS+ request failed: %s", err)
                     errors["base"] = "cannot_connect"
+                    error_detail = str(err)
                 else:
                     return await self.async_step_settings()
 
@@ -219,7 +230,10 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
             else vol.Schema({})
         )
         return self.async_show_form(
-            step_id="station", data_schema=schema, errors=errors
+            step_id="station",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"error_detail": error_detail},
         )
 
     async def async_step_settings(
@@ -257,21 +271,29 @@ class SemsPlusConfigFlow(ConfigFlow, domain=DOMAIN):
         """Ask for a new password."""
         entry = self._get_reauth_entry()
         errors: dict[str, str] = {}
+        error_detail = ""
         if user_input is not None:
             data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
             try:
                 await _client(self.hass, data).login()
-            except SemsAuthError:
+            except SemsAuthError as err:
+                _LOGGER.warning("SEMS+ login failed: %s", err)
                 errors["base"] = "invalid_auth"
-            except SemsApiError:
+                error_detail = str(err)
+            except SemsApiError as err:
+                _LOGGER.warning("SEMS+ request failed: %s", err)
                 errors["base"] = "cannot_connect"
+                error_detail = str(err)
             else:
                 return self.async_update_reload_and_abort(entry, data=data)
 
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
-            description_placeholders={"username": entry.data[CONF_USERNAME]},
+            description_placeholders={
+                "username": entry.data[CONF_USERNAME],
+                "error_detail": error_detail,
+            },
             errors=errors,
         )
 

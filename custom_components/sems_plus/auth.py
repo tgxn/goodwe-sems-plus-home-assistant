@@ -10,6 +10,9 @@ from typing import Any
 
 _EmptyLoginToken = '{"uid":"","timestamp":0,"token":"","client":"semsPlusWeb","version":"","language":"en"}'
 
+# Custom User-Agent
+_UserAgent = "Mozilla/5.0 (sems_plus)"
+
 
 def hash_password(password: str) -> str:
     """Return the SEMS+ password encoding (base64 of the MD5 hex digest)."""
@@ -36,6 +39,7 @@ def login_headers() -> dict[str, str]:
     return {
         "Content-Type": "application/json",
         "Accept": "application/json, */*;q=0.5",
+        "User-Agent": _UserAgent,
         "Token": _EmptyLoginToken,
         "X-Signature": generate_signature({}),
     }
@@ -46,6 +50,7 @@ def authenticated_headers(token_data: dict[str, Any]) -> dict[str, str]:
     return {
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "User-Agent": _UserAgent,
         "token": json.dumps(token_data),
         "X-Signature": generate_signature(token_data),
     }

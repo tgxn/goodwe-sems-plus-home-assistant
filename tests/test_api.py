@@ -178,6 +178,7 @@ def test_mqtt_message_for_other_station_is_ignored() -> None:
 
     assert len(received) == 1
     assert client.mqtt_last_message_at is not None
+    assert client.mqtt_messages_received == 1
 
 
 async def test_mqtt_lifecycle_backs_off_and_stops() -> None:

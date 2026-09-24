@@ -39,8 +39,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Failed to connect: {error_detail}",
+      "invalid_auth": "Invalid authentication: {error_detail}",
       "unknown": "Unexpected error",
       "no_stations_found": "No stations were found for this account",
       "all_stations_configured": "All stations for this account are already configured",
@@ -352,7 +352,7 @@
         }
       },
       "live_feed_state": {
-        "name": "Live feed state",
+        "name": "MQTT live feed status",
         "state": {
           "disconnected": "Disconnected",
           "connecting": "Connecting",
@@ -361,15 +361,18 @@
         }
       },
       "last_live_message": {
-        "name": "Last live feed message"
+        "name": "MQTT last message"
       },
       "live_feed_failures": {
-        "name": "Live feed connection failures"
+        "name": "MQTT connection failures"
+      },
+      "live_feed_messages": {
+        "name": "MQTT messages received"
       }
     },
     "binary_sensor": {
       "live_feed_connected": {
-        "name": "Live feed"
+        "name": "MQTT live feed"
       },
       "on_grid": {
         "name": "On grid"

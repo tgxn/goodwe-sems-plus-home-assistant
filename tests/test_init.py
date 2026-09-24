@@ -106,7 +106,8 @@ async def test_live_update_does_not_reschedule_poll(
     coordinator = config_entry.runtime_data.coordinator
     client = config_entry.runtime_data.client
     unsub_before = coordinator._unsub_refresh
-    assert state(hass, "sensor.test_station_last_live_feed_message") == "unknown"
+    assert state(hass, "sensor.test_station_mqtt_last_message") == "unknown"
+    assert state(hass, "sensor.test_station_mqtt_messages_received") == "0"
 
     raw = dict(load_fixture("mqtt_messages.json")[0])
     raw.update({"pBat": "1.5", "flows": {"pSystem": ["pBat"]}})
@@ -119,9 +120,10 @@ async def test_live_update_does_not_reschedule_poll(
     assert state(hass, "sensor.test_station_battery_charging_power") == "1500"
     assert state(hass, "sensor.test_station_battery_state") == "charging"
     assert state(hass, "sensor.battery_rack_1_power") == "-250"
-    assert state(hass, "sensor.test_station_last_live_feed_message") == (
+    assert state(hass, "sensor.test_station_mqtt_last_message") == (
         dt_util.utcnow().isoformat(timespec="seconds")
     )
+    assert state(hass, "sensor.test_station_mqtt_messages_received") == "1"
     assert coordinator._unsub_refresh is unsub_before
 
 
@@ -135,22 +137,22 @@ async def test_live_feed_health_entities(
     coordinator = config_entry.runtime_data.coordinator
     client = config_entry.runtime_data.client
     client._mqtt_status_handler = coordinator.async_handle_mqtt_state
-    assert state(hass, "binary_sensor.test_station_live_feed") == "off"
+    assert state(hass, "binary_sensor.test_station_mqtt_live_feed") == "off"
 
     client._set_mqtt_state("connecting")
     client._mqtt_failures = 2
     client._set_mqtt_state("connecting")  # same state, new failure count
     await hass.async_block_till_done()
     assert coordinator._fallback_unsub is not None
-    assert state(hass, "sensor.test_station_live_feed_state") == "connecting"
-    assert state(hass, "sensor.test_station_live_feed_connection_failures") == "2"
+    assert state(hass, "sensor.test_station_mqtt_live_feed_status") == "connecting"
+    assert state(hass, "sensor.test_station_mqtt_connection_failures") == "2"
 
     client._mqtt_failures = 0
     client._set_mqtt_state("connected")
     await hass.async_block_till_done()
     assert coordinator._fallback_unsub is None
-    assert state(hass, "binary_sensor.test_station_live_feed") == "on"
-    assert state(hass, "sensor.test_station_live_feed_connection_failures") == "0"
+    assert state(hass, "binary_sensor.test_station_mqtt_live_feed") == "on"
+    assert state(hass, "sensor.test_station_mqtt_connection_failures") == "0"
 
 
 async def test_unload_stops_live_feed(
