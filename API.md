@@ -13,8 +13,10 @@ Hosts (AU):
 | Live feed (MQTT over WebSocket) | `wss://netty-wss-au.iot.goodwe-power.com:8885/mqtt` |
 
 Every gateway response uses the same envelope. `code` is `"00000"` on success;
-`GY0429` means rate limited; `100002` or an "authorization" message means the
-session expired (log in again and retry).
+`GY0429` means rate limited. Session-expired codes seen so far are `100002` and
+`C0602` (账号登录异常). The integration retries any failed call once after a
+fresh login, and backs off from logging in again (1 min, doubling up to 30 min)
+if the retry still fails.
 
 ```json
 { "code": "00000", "description": "成功", "traceId": "...", "data": ... }
@@ -382,8 +384,8 @@ type-specific codes:
 ### GET /sems-plant/api/second-data/enable
 
 Turns on the live feed for a station. The web app calls this repeatedly while
-a station is open; without repeat calls the feed goes quiet. The integration
-re-calls it every 60 seconds.
+a station is open. The integration calls it once per MQTT connection and again
+only if no station message arrives for 60 seconds.
 
 **Endpoint:** `{gateway}/sems-plant/api/second-data/enable`
 

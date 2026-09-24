@@ -6,16 +6,17 @@ import asyncio
 import json
 from datetime import date
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.sems_plus import sems_api_v2
 from custom_components.sems_plus.const import SEMS_REGIONS
 from custom_components.sems_plus.sems_api_v2 import (
-    OutOfRetries,
     SemsApiError,
     SemsLiveData,
     SemsPlusClient,
+    SemsResponseError,
     decode_mqtt_payload,
 )
 
@@ -35,7 +36,10 @@ class FakeTransport:
         self, method: str, url: str, headers: dict[str, str], **kwargs: Any
     ) -> dict[str, Any] | None:
         self.calls.append({"method": method, "url": url, "headers": headers, **kwargs})
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if response is None:  # None stands in for a failed (e.g. 401) response
+            raise SemsResponseError("failed")
+        return response
 
 
 def make_client(
@@ -118,7 +122,7 @@ async def test_device_endpoints() -> None:
 
 
 async def test_auth_expiry_relogs_and_retries() -> None:
-    """An expired session (None from the HTTP layer) triggers one re-login."""
+    """A failed call triggers one re-login and retry."""
     client, transport = make_client(None, ok(load_fixture("station_flow.json")))
 
     flow = await client.get_station_flow(STATION_ID)
@@ -129,11 +133,45 @@ async def test_auth_expiry_relogs_and_retries() -> None:
     assert json.loads(transport.calls[1]["headers"]["token"])["token"] == "t"
 
 
-async def test_out_of_retries() -> None:
-    """Repeated auth failures raise OutOfRetries."""
-    client, _ = make_client(None, None)
-    with pytest.raises(OutOfRetries):
+def client_with_response(body: dict[str, Any]) -> tuple[SemsPlusClient, MagicMock]:
+    """Return a client whose aiohttp session always answers with `body`."""
+    response = MagicMock(status=200)
+    response.json = AsyncMock(return_value=body)
+    request = MagicMock()
+    request.__aenter__ = AsyncMock(return_value=response)
+    request.__aexit__ = AsyncMock(return_value=None)
+    session = MagicMock()
+    session.request.return_value = request
+    client = SemsPlusClient(session, "user", "pass", SEMS_REGIONS["AU"])
+    client._login = AsyncMock(return_value={"uid": "u", "token": "t"})  # type: ignore[method-assign]
+    return client, session
+
+
+async def test_error_code_relogs_and_retries_once() -> None:
+    """Any error code gets one fresh login and one retry, then fails."""
+    client, session = client_with_response(
+        {"code": "C0602", "description": "账号登录异常"}
+    )
+
+    with pytest.raises(SemsApiError, match="C0602"):
         await client.get_station_flow(STATION_ID)
+
+    assert session.request.call_count == 2
+    assert client._login.await_count == 2  # initial login + one renewal
+
+
+async def test_relogin_backs_off_after_failed_retry() -> None:
+    """After a fresh login did not help, the next call does not log in again."""
+    client, session = client_with_response({"code": "X9999", "msg": "nope"})
+    with pytest.raises(SemsApiError):
+        await client.get_station_flow(STATION_ID)
+
+    with pytest.raises(SemsApiError, match="X9999"):
+        await client.get_station_flow(STATION_ID)
+
+    assert session.request.call_count == 3  # 2 for the first call, 1 for the second
+    assert client._login.await_count == 2
+    assert client._relogin_failures == 1
 
 
 async def test_pagination_stops_at_total() -> None:
@@ -195,3 +233,25 @@ async def test_mqtt_lifecycle_backs_off_and_stops() -> None:
     assert states[-1] == "disconnected"
     assert client.mqtt_connection_failures == 1
     assert client.mqtt_state == "disconnected"
+
+
+async def test_second_data_watchdog_only_reenables_when_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """second-data is re-enabled only after the feed has been quiet."""
+    monkeypatch.setattr(sems_api_v2, "_LiveWatchdogCheckSeconds", 0.01)
+    monkeypatch.setattr(sems_api_v2, "_LiveQuietSeconds", 0.05)
+    client, _ = make_client()
+    client.enable_second_data = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    raw = json.dumps(load_fixture("mqtt_messages.json")[0]).encode()
+
+    task = asyncio.create_task(client._second_data_watchdog(STATION_ID))
+    for _ in range(10):
+        client._handle_mqtt_message(STATION_ID, raw, lambda live: None)
+        await asyncio.sleep(0.01)
+    client.enable_second_data.assert_not_awaited()
+
+    await asyncio.sleep(0.1)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    client.enable_second_data.assert_awaited_with(STATION_ID)

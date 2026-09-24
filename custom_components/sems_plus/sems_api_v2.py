@@ -63,12 +63,17 @@ _ProductionItems = (
 
 _SuccessCodes = {0, "0", "00000"}
 _RateLimitCode = "GY0429"
-_AuthErrorCodes = {"100002"}
+# A failed call is retried once with a fresh login (SEMS reports expired
+# sessions with several codes, e.g. 100002 or C0602 "账号登录异常"). If that
+# retry fails too, stop logging in again for a while, doubling each time.
+_ReloginBackoffSeconds = 60
+_MaxReloginBackoffSeconds = 30 * 60
 
 _MqttKeepaliveSeconds = 60
-# The web UI re-calls second-data/enable repeatedly while a station is open;
-# without it the live feed goes quiet. The required interval is unverified.
-_SecondDataKeepaliveSeconds = 60
+# second-data/enable is called once per connection. It is only called again if
+# no station message arrives for this long (SEMS normally publishes every ~5 s).
+_LiveQuietSeconds = 60
+_LiveWatchdogCheckSeconds = 15
 _ReconnectDelay = 5
 _MaxReconnectDelay = 60
 _MqttFailedThreshold = 3
@@ -103,8 +108,8 @@ class SemsAuthError(SemsApiError):
     """Error to indicate SEMS+ rejected the credentials."""
 
 
-class OutOfRetries(SemsApiError):
-    """Error to indicate too many token refresh attempts."""
+class SemsResponseError(SemsApiError):
+    """Error to indicate SEMS answered with HTTP 401 or a non-success code."""
 
 
 class SemsRateLimitedError(SemsApiError):
@@ -230,6 +235,10 @@ class SemsPlusClient:
         self._region = region
         self._token: dict[str, Any] | None = None
         self._login_lock = asyncio.Lock()
+        # Re-login backoff: consecutive retries that failed even with a fresh
+        # token, and the monotonic time before which we will not log in again.
+        self._relogin_failures = 0
+        self._relogin_blocked_until = 0.0
 
         self._mqtt_task: asyncio.Task[None] | None = None
         self._mqtt_stop = asyncio.Event()
@@ -239,6 +248,8 @@ class SemsPlusClient:
         self._mqtt_reported: tuple[str, int] = ("disconnected", 0)
         self._mqtt_last_message_at: datetime | None = None
         self._mqtt_messages = 0
+        # Monotonic time of the last station message, for the second-data watchdog.
+        self._mqtt_last_live = 0.0
 
     @property
     def region(self) -> SemsRegion:
@@ -262,8 +273,8 @@ class SemsPlusClient:
     ) -> dict[str, Any] | None:
         """Make an HTTP request and return the JSON body.
 
-        Returns None when SEMS reports an expired or invalid session so the
-        caller can refresh the token and retry.
+        Raises SemsResponseError for HTTP 401 or a non-success code, which the
+        caller may retry with a fresh login.
         """
         _LOGGER.debug("SEMS - Making %s to %s", operation_name, url)
         try:
@@ -276,10 +287,8 @@ class SemsPlusClient:
                 timeout=aiohttp.ClientTimeout(total=_RequestTimeout),
             ) as response:
                 if response.status == 401:
-                    _LOGGER.debug(
-                        "%s - HTTP 401, will retry with fresh token", operation_name
-                    )
-                    return None
+                    _LOGGER.warning("SEMS - %s failed: HTTP 401", operation_name)
+                    raise SemsResponseError(f"{operation_name} failed: HTTP 401")
                 response.raise_for_status()
                 json_response = await response.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
@@ -289,48 +298,28 @@ class SemsPlusClient:
         if not isinstance(json_response, dict):
             raise SemsApiError(f"{operation_name} returned a non-object response")
 
-        response_code = json_response.get("code")
+        # Log every response in full (redacted) so new error codes can be debugged.
         _LOGGER.debug(
-            "SEMS - %s response: %s",
-            operation_name,
-            redact_for_log(json_response),
+            "SEMS - %s response: %s", operation_name, redact_for_log(json_response)
         )
 
-        if str(response_code) == _RateLimitCode:
+        code = str(json_response.get("code"))
+        message = json_response.get("msg") or json_response.get("description")
+
+        if code == _RateLimitCode:
             raise SemsRateLimitedError(
                 retry_after=_RateLimitRetryAfterSeconds,
                 message=f"{operation_name} returned rate-limit code {_RateLimitCode}",
             )
 
-        if not validate_code or response_code in _SuccessCodes:
+        # Login checks the code itself (validate_code=False).
+        if not validate_code or json_response.get("code") in _SuccessCodes:
             return json_response
 
-        error_msg = str(
-            json_response.get("msg")
-            or json_response.get("description")
-            or "Unknown error"
+        _LOGGER.warning(
+            "SEMS - %s failed with code %s: %s", operation_name, code, message
         )
-        if (
-            str(response_code) in _AuthErrorCodes
-            or "authorization" in error_msg.lower()
-        ):
-            _LOGGER.debug(
-                "%s - Authorization expired (code: %s): %s. Will retry with fresh token.",
-                operation_name,
-                response_code,
-                error_msg,
-            )
-            return None
-
-        _LOGGER.error(
-            "%s failed with code: %s, message: %s",
-            operation_name,
-            response_code,
-            error_msg,
-        )
-        raise SemsApiError(
-            f"{operation_name} failed with code {response_code}: {error_msg}"
-        )
+        raise SemsResponseError(f"{operation_name} failed with code {code}: {message}")
 
     async def _login(self) -> dict[str, Any]:
         """Authenticate and return the token payload used for gateway calls."""
@@ -340,22 +329,23 @@ class SemsPlusClient:
             redact_value(self._username),
             self._region.login_url,
         )
-        json_response = await self._make_http_request(
-            "POST",
-            self._region.login_url,
-            login_headers(),
-            json_data={
-                "account": self._username,
-                "pwd": hash_password(self._password),
-                "agreement": 1,
-                "isLocal": False,
-                "isChinese": False,
-            },
-            operation_name=operation_name,
-            validate_code=False,
-        )
-        if json_response is None:
-            raise SemsAuthError("SEMS+ login was rejected (HTTP 401)")
+        try:
+            json_response = await self._make_http_request(
+                "POST",
+                self._region.login_url,
+                login_headers(),
+                json_data={
+                    "account": self._username,
+                    "pwd": hash_password(self._password),
+                    "agreement": 1,
+                    "isLocal": False,
+                    "isChinese": False,
+                },
+                operation_name=operation_name,
+                validate_code=False,
+            )
+        except SemsResponseError as err:
+            raise SemsAuthError(f"SEMS+ login was rejected: {err}") from err
 
         code = json_response.get("code")
         token_data = json_response.get("data")
@@ -373,12 +363,17 @@ class SemsPlusClient:
         _LOGGER.debug("SEMS - API token received: %s", redact_for_log(token))
         return token
 
-    async def _get_token(self, renew: bool = False) -> dict[str, Any]:
-        """Return the current token, logging in once if missing or renewing."""
-        stale_token = self._token
+    async def _get_token(
+        self, failed_token: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Return the current token, logging in if there is none.
+
+        Pass the token a call just failed with to force a new login. Calls that
+        fail together share one login: whoever gets the lock first logs in and
+        the rest see the token has already changed.
+        """
         async with self._login_lock:
-            # Another caller may have already refreshed while we waited.
-            if self._token is None or (renew and self._token is stale_token):
+            if self._token is None or self._token is failed_token:
                 self._token = await self._login()
             return self._token
 
@@ -390,13 +385,14 @@ class SemsPlusClient:
         params: dict[str, Any] | None = None,
         json_data: dict[str, Any] | None = None,
         operation_name: str = "API call",
-        renew_token: bool = False,
-        max_token_retries: int = 2,
     ) -> Any:
-        """Make an authenticated call and return its `data` payload."""
+        """Make an authenticated call and return its `data` payload.
+
+        On failure, log in again and retry once (unless backing off).
+        """
         url = self._region.gateway_api_url + url_part
-        for attempt in range(max_token_retries):
-            token = await self._get_token(renew=renew_token or attempt > 0)
+
+        async def call(token: dict[str, Any]) -> Any:
             json_response = await self._make_http_request(
                 method,
                 url,
@@ -405,18 +401,44 @@ class SemsPlusClient:
                 json_data=json_data,
                 operation_name=operation_name,
             )
-            if json_response is not None:
-                return json_response.get("data")
+            return json_response.get("data") if json_response else None
 
-            _LOGGER.info(
-                "SEMS - %s authorization expired. Refreshing token and retrying "
-                "(%s attempts remaining)...",
-                operation_name,
-                max_token_retries - attempt - 1,
-            )
+        token = await self._get_token()
+        try:
+            return await call(token)
+        except SemsResponseError:
+            # Recent fresh logins have not helped; don't log in again yet.
+            wait = self._relogin_blocked_until - time.monotonic()
+            if wait > 0:
+                _LOGGER.debug(
+                    "SEMS - not logging in again for another %ds", round(wait)
+                )
+                raise
 
-        raise OutOfRetries(
-            f"SEMS - {operation_name} failed: maximum token refresh attempts exceeded"
+        _LOGGER.info("SEMS - logging in again and retrying %s", operation_name)
+        try:
+            data = await call(await self._get_token(failed_token=token))
+        except SemsResponseError:
+            self._start_relogin_backoff()
+            raise
+        self._relogin_failures = 0
+        return data
+
+    def _start_relogin_backoff(self) -> None:
+        """Stop logging in again for a while after a retry with a fresh token failed."""
+        now = time.monotonic()
+        # Calls that fail together (e.g. one poll) only count once.
+        if now < self._relogin_blocked_until:
+            return
+        self._relogin_failures += 1
+        delay = min(
+            _ReloginBackoffSeconds * 2 ** (self._relogin_failures - 1),
+            _MaxReloginBackoffSeconds,
+        )
+        self._relogin_blocked_until = now + delay
+        _LOGGER.warning(
+            "SEMS - still failing after a fresh login; not logging in again for %ds",
+            delay,
         )
 
     async def _get_paged(
@@ -774,8 +796,9 @@ class SemsPlusClient:
                         "SEMS MQTT connected and subscribed to %s",
                         redact_for_log(topic),
                     )
-                    keepalive_task = asyncio.create_task(
-                        self._second_data_keepalive(station_id)
+                    self._mqtt_last_live = time.monotonic()
+                    watchdog_task = asyncio.create_task(
+                        self._second_data_watchdog(station_id)
                     )
                     try:
                         async for message in client.messages:
@@ -787,8 +810,8 @@ class SemsPlusClient:
                                     station_id, bytes(payload), on_update
                                 )
                     finally:
-                        keepalive_task.cancel()
-                        await asyncio.gather(keepalive_task, return_exceptions=True)
+                        watchdog_task.cancel()
+                        await asyncio.gather(watchdog_task, return_exceptions=True)
             except asyncio.CancelledError:
                 raise
             except (aiomqtt.MqttError, SemsApiError, ValueError) as err:
@@ -827,15 +850,23 @@ class SemsPlusClient:
 
         self._set_mqtt_state("disconnected")
 
-    async def _second_data_keepalive(self, station_id: str) -> None:
-        """Keep re-enabling second-data so SEMS keeps publishing live updates."""
+    async def _second_data_watchdog(self, station_id: str) -> None:
+        """Re-enable second-data only if the live feed goes quiet."""
         while True:
-            await asyncio.sleep(_SecondDataKeepaliveSeconds)
+            await asyncio.sleep(_LiveWatchdogCheckSeconds)
+            quiet = time.monotonic() - self._mqtt_last_live
+            if quiet < _LiveQuietSeconds:
+                continue
+            _LOGGER.debug(
+                "SEMS live feed quiet for %ds; re-enabling second-data", quiet
+            )
+            # Wait another full quiet period before trying again.
+            self._mqtt_last_live = time.monotonic()
             try:
                 if not await self.enable_second_data(station_id):
-                    _LOGGER.warning("SEMS second-data keepalive returned false")
+                    _LOGGER.warning("SEMS second-data re-enable returned false")
             except SemsApiError as err:
-                _LOGGER.warning("SEMS second-data keepalive failed: %s", err)
+                _LOGGER.warning("SEMS second-data re-enable failed: %s", err)
 
     def _handle_mqtt_message(
         self, station_id: str, payload: bytes, on_update: LiveDataHandler
@@ -854,6 +885,7 @@ class SemsPlusClient:
             return
 
         self._mqtt_last_message_at = live_data.received_at
+        self._mqtt_last_live = time.monotonic()
         self._mqtt_messages += 1
         try:
             on_update(live_data)
