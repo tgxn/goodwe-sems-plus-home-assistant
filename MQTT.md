@@ -99,22 +99,47 @@ This produces a normalized object such as:
 
 The reason this matters is that the JavaScript app expects a real object graph after decoding, not a flat string blob. All downstream processing should work with the unwrapped payload, not the raw nested string.
 
-The current Home Assistant normalization maps live MQTT fields as follows:
+## 4a. Entities updated by MQTT messages
 
-| MQTT field | Coordinator field                        | Unit exposed in HA |
-| ---------- | ---------------------------------------- | ------------------ |
-| `pSystem`  | `powerflow.pv`, `powerflow.system_power` | W                  |
-| `pConsum`  | `powerflow.load`                         | W                  |
-| `pGrid`    | `powerflow.grid`                         | W                  |
-| `pBat`     | `powerflow.battery`                      | W                  |
-| `pAc`      | `powerflow.ac_power`                     | W                  |
-| `pDc`      | `powerflow.dc_power`                     | W                  |
-| `qAc`      | `powerflow.reactive_power`               | var                |
-| `fAc`      | `powerflow.grid_frequency`               | Hz                 |
-| `pf`       | `powerflow.power_factor`                 | ratio              |
-| `soc`      | `powerflow.soc`                          | %                  |
+Each station message updates Home Assistant immediately (without waiting for the REST poll). Only the entities below change on a message; everything else (energy totals, income, device telemetry, device info) comes from the REST poll every `poll_interval` (default 5 minutes).
 
-`stationId`, `time`, `traceId`, and `flows` are retained with the normalized update for source/debug context. They are not exposed as measurement sensors.
+**All entities in the table below live on the single Station device** (model `SEMS+ Station`, whole-system values) — not on any individual Inverter or Battery Rack device. See section 7 for device naming conventions.
+
+Power fields arrive in kW and are converted to W. `flows` is the power-flow graph (for example `{"pBat": ["pConsum"]}` = battery supplying the load) and sets the direction/sign.
+
+Station device sensors:
+
+| Entity                    | MQTT field(s)      | Notes                                                |
+| ------------------------- | ------------------ | ---------------------------------------------------- |
+| Solar power               | `pSystem`          | W                                                    |
+| Home load power           | `pConsum`          | W                                                    |
+| Grid power                | `pGrid` + `flows`  | W, positive = importing, negative = exporting        |
+| Grid import power         | `pGrid` + `flows`  | W, positive part of grid power                       |
+| Grid export power         | `pGrid` + `flows`  | W, negative part of grid power (as a positive value) |
+| Battery power             | `pBat` + `flows`   | W, positive = discharging, negative = charging       |
+| Battery charging power    | `pBat` + `flows`   | W                                                    |
+| Battery discharging power | `pBat` + `flows`   | W                                                    |
+| Inverter output power     | `pAc`              | W                                                    |
+| PV input power            | `pDc`              | W                                                    |
+| Reactive power            | `qAc`              | var                                                  |
+| Grid frequency            | `fAc`              | Hz                                                   |
+| Power factor              | `pf`               |                                                      |
+| Battery state of charge   | `soc`              | %                                                    |
+| Battery state             | `flows`            | charging / discharging / idle                        |
+| Grid state                | `flows`            | importing / exporting / idle                         |
+| Last live update          | (message received) | diagnostic; also set by the REST fallback            |
+| MQTT last message         | (message received) | diagnostic                                           |
+| MQTT messages received    | (message received) | diagnostic counter                                   |
+
+**Battery Rack device sensors** (one device per physical battery rack, linked to the Station device via `via_device_id`) have their Power, Charging power, and Discharging power entities updated by MQTT: the **value** comes from REST telemetry `pBat` (5-minute poll) but the **sign** (direction) is set by the live `flows`, so a message can flip their direction without changing the magnitude. No other Battery Rack entity is updated by the live feed.
+
+**Inverter device sensors** (one device per inverter/all-in-one cabinet, linked to the Station device via `via_device_id`) — backup power/voltage/current, per-string PV power/voltage/current, energy totals, device info — are **never** updated by the live MQTT feed. All Inverter data comes from the REST poll only.
+
+The MQTT live feed connection status, failure count, and message diagnostics (live_feed_state, last_live_message, live_feed_failures, live_feed_messages, live_feed_connected) follow the connection state, not individual messages, and live on the Station device.
+
+`stationId`, `time` and `traceId` are not exposed. A message is ignored if its `stationId` does not match the configured station.
+
+While the feed is not connected, the same station entities are filled from REST `stations/flow` every `fallback_interval` (default 120 s) instead.
 
 ## 5. Example auth/config/reconnect sequence
 

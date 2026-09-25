@@ -270,7 +270,7 @@ class SemsPlusClient:
         json_data: dict[str, Any] | None = None,
         operation_name: str,
         validate_code: bool = True,
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """Make an HTTP request and return the JSON body.
 
         Raises SemsResponseError for HTTP 401 or a non-success code, which the
@@ -401,7 +401,7 @@ class SemsPlusClient:
                 json_data=json_data,
                 operation_name=operation_name,
             )
-            return json_response.get("data") if json_response else None
+            return json_response.get("data")
 
         token = await self._get_token()
         try:

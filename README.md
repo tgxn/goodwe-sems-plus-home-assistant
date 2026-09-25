@@ -120,7 +120,9 @@ this automatically for `total_increasing` sensors.
 - **Live feed**: after setup the integration enables SEMS+ "second data" for
   the station and subscribes to its MQTT feed. Live power arrives every few
   seconds. Second data is enabled once per connection and only re-enabled if
-  no live message arrives for 60 seconds.
+  no live message arrives for 60 seconds. See
+  [MQTT.md](MQTT.md#4a-entities-updated-by-mqtt-messages) for exactly which
+  entities each message updates.
 - **Live fallback**: while the live feed is not connected, live power is polled
   from the REST API at the live fallback interval.
 - **Poll**: energy totals, the device list and per-device values are fetched at
