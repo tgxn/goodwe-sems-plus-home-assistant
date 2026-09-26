@@ -1,0 +1,97 @@
+[
+  {
+    "code": "status",
+    "data": "1",
+    "dataType": "NUMERIC",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "status"
+  },
+  {
+    "code": "picture",
+    "data": "wifilan_dongle",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "图片地址"
+  },
+  {
+    "code": "deviceName",
+    "data": "Dongle 1",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "name_1"
+  },
+  {
+    "code": "sn",
+    "data": "DNG0000000000001",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "serial_number_1"
+  },
+  {
+    "code": "deviceType",
+    "data": "comm_module",
+    "dataType": "DICTIONARY",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "type"
+  },
+  {
+    "code": "modelType",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "model"
+  },
+  {
+    "code": "addTime",
+    "data": "2026-01-01 00:00:00",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "add_time"
+  },
+  {
+    "code": "remark",
+    "data": "",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "note"
+  },
+  {
+    "code": "communicationMode",
+    "data": "LAN",
+    "dataType": "NUMERIC",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "communication_mode"
+  },
+  {
+    "code": "wirelessSignalStrength",
+    "data": "0",
+    "dataType": "NUMERIC",
+    "defaultFlag": true,
+    "hiddenInMore": true,
+    "alias": "signal_strength"
+  },
+  {
+    "code": "commModuleVer",
+    "data": "1.0.0",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "firmware_version"
+  },
+  {
+    "code": "isHems",
+    "data": "0",
+    "dataType": "string",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "frontendConfig": {}
+  }
+]

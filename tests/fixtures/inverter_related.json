@@ -1,0 +1,13 @@
+[
+  {
+    "sn": "VD2001INV0000000000001",
+    "no": "1",
+    "name": "BAT1",
+    "translateCode": "mppt1_battery",
+    "type": "BAT_SYS",
+    "status": 7,
+    "soc": 50.0,
+    "isConnected": true,
+    "pbat": 0.5
+  }
+]

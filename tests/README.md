@@ -1,100 +1,24 @@
-# SEMS API Tests
+# Tests
 
-This directory contains comprehensive tests for the SEMS API module.
+Tests for the GoodWe SEMS+ integration (`custom_components/sems_plus`). They
+run against Home Assistant's test harness with the API client mocked, so no
+network access or SEMS+ account is needed.
 
-## Test Files
+| File                  | Covers                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `test_api.py`         | API client: request URLs and bodies, token refresh, pagination, MQTT payload decoding and live feed lifecycle |
+| `test_mapping.py`     | Value mapping: factor flattening, flow signs, unit conversion, statistics totals, status labels               |
+| `test_init.py`        | Setup, devices and entity values, live updates, live feed health entities, unload                             |
+| `test_entities.py`    | Entity naming rules and English translations                                                                  |
+| `test_config_flow.py` | Config flow (credentials, station, settings), errors and options flow                                         |
+| `conftest.py`         | Shared fixtures: config entry and a mocked `SemsPlusClient`                                                   |
+| `fixtures/`           | Simplified SEMS+ API responses with generic placeholder values                                                |
 
-- `test_sems_api.py` - Main comprehensive test suite with full coverage of all SEMS API functionality
-- `test_sems_api_clean.py` - Clean integration test suite with realistic JSON data structures
-- `test_sensor_entities.py` - Home Assistant entity tests (config entry + entity registry)
-- `fixtures.py` - Anonymized SEMS API response data for test fixtures
-- `__init__.py` - Package initialization for tests
-- `requirements.txt` - Test dependencies
-
-## Running Tests
-
-To run all tests:
-```bash
-python -m pytest tests/ -v
-```
-
-If you are running these tests inside the Home Assistant core repository workspace (where `/workspaces/home-assistant/pyproject.toml` exists), pytest may try to load Home Assistant's own `tests/conftest.py` and fail. In that case, run with `--confcutdir`:
+## Running
 
 ```bash
-pip install -r config/goodwe-sems-home-assistant/requirements.test.txt
-python -m pytest config/goodwe-sems-home-assistant/tests/ -v --confcutdir=config/goodwe-sems-home-assistant # run from /workspaces/home-assistant in HA dev-container
+python -m pip install -r requirements.test.txt
+python -m pytest tests -v
 ```
 
-To run a specific test file:
-```bash
-python -m pytest tests/test_sems_api.py -v
-```
-
-To run a specific test:
-```bash
-python -m pytest tests/test_sems_api.py::TestSemsApi::test_get_login_token_success -v
-```
-
-## Test Coverage
-
-The test suite covers:
-
-### Authentication
-- ✅ Successful login with valid credentials
-- ✅ Failed login with invalid credentials
-- ✅ Network errors during login
-- ✅ Authentication test success/failure
-
-### Data Retrieval
-- ✅ Get power station IDs successfully
-- ✅ Get monitoring data successfully with real JSON structure
-- ✅ Handle failures gracefully (return empty data)
-
-### Control Commands
-- ✅ Successful inverter status change
-- ✅ HTTP error handling with retry mechanism
-
-### Retry Logic
-- ✅ Token refresh and retry on expired tokens
-- ✅ Maximum retry limits with OutOfRetries exception
-
-### Error Handling
-- ✅ Network connection errors
-- ✅ HTTP status code errors
-- ✅ API response validation
-- ✅ Token expiration handling
-
-## Test Architecture
-
-The tests use `requests-mock` to mock HTTP calls, allowing for:
-- Isolated testing without external dependencies
-- Predictable test behavior
-- Testing of error conditions
-- Fast test execution
-
-Each test follows the pattern:
-1. Setup mock responses for login and API calls using anonymized SEMS JSON structures
-2. Execute the API method under test
-3. Assert expected results or exceptions
-
-## Test Data
-
-The test suite uses anonymized API response structures based on real SEMS API data:
-- **Mock Power Station ID**: `12345678-1234-5678-9abc-123456789abc` (anonymized UUID)
-- **Mock Inverter Serial**: `GW0000SN000TEST1` (anonymized)
-- **Mock Inverter Model**: `GW0000-TEST` (anonymized)
-- **Mock Location**: `Test City, Test Country` (anonymized)
-- **Mock Station Name**: `Test Solar Farm` (anonymized)
-- **Mock Email**: `test@example.com` (anonymized)
-- **Mock Coordinates**: `longitude: 0.0, latitude: 0.0` (anonymized)
-- **Mock Relation IDs**: `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee` (anonymized)
-- **Success Message**: `操作成功` (Chinese: "Operation successful")
-- **Complete JSON Structure**: Includes info, kpi, inverter data, weather, and energy statistics
-
-This ensures tests validate against the actual API response format while protecting user privacy.
-
-## Dependencies
-
-- `pytest` - Test framework
-- `requests-mock` - HTTP request mocking
-- `requests` - HTTP library (tested dependency)
+Home Assistant 2026.8+ (Python 3.14) is required.

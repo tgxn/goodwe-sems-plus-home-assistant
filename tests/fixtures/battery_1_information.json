@@ -1,0 +1,80 @@
+[
+  {
+    "code": "status",
+    "data": "5",
+    "dataType": "NUMERIC",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "status"
+  },
+  {
+    "code": "picture",
+    "data": "lxd2_battery_rack",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "图片地址"
+  },
+  {
+    "code": "deviceName",
+    "data": "Battery Rack 1",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "name_1"
+  },
+  {
+    "code": "sn",
+    "data": "BAT0000000000001",
+    "dataType": "STRING",
+    "defaultFlag": true,
+    "hiddenInMore": false,
+    "alias": "serial_number_1"
+  },
+  {
+    "code": "deviceType",
+    "data": "battery_rack",
+    "dataType": "DICTIONARY",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "type"
+  },
+  {
+    "code": "modelType",
+    "data": "Test Battery",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "model"
+  },
+  {
+    "code": "addTime",
+    "data": "2026-01-01 00:00:00",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "add_time"
+  },
+  {
+    "code": "remark",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": false,
+    "alias": "note"
+  },
+  {
+    "code": "subtype",
+    "dataType": "STRING",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "alias": "子类型"
+  },
+  {
+    "code": "isHems",
+    "data": "0",
+    "dataType": "string",
+    "defaultFlag": false,
+    "hiddenInMore": true,
+    "frontendConfig": {}
+  }
+]

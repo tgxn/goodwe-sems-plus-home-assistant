@@ -1,0 +1,150 @@
+[
+  {
+    "code": "system",
+    "alias": "system_parameters",
+    "factors": [
+      {
+        "code": "sn",
+        "data": "BAT0000000000001",
+        "dataType": "STRING",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "alias": "serial_number_1",
+        "supportCurve": false
+      },
+      {
+        "code": "serCellTotal",
+        "data": "26",
+        "dataType": "STRING",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "alias": "total_cells_in_series",
+        "supportCurve": false
+      },
+      {
+        "code": "version",
+        "data": "1.0",
+        "dataType": "STRING",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "alias": "bms_ver",
+        "supportCurve": false
+      },
+      {
+        "code": "dcdcVersion",
+        "data": "1.0",
+        "dataType": "STRING",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "alias": "dcdc_ver",
+        "supportCurve": false
+      }
+    ]
+  },
+  {
+    "code": "runtime",
+    "alias": "operating_param",
+    "factors": [
+      {
+        "code": "soc",
+        "data": "50",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "%",
+        "alias": "soc",
+        "supportCurve": true
+      },
+      {
+        "code": "soh",
+        "data": "100",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "%",
+        "alias": "soh",
+        "supportCurve": false
+      },
+      {
+        "code": "pBat",
+        "data": "0.25",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kW",
+        "alias": "power",
+        "supportCurve": true
+      },
+      {
+        "code": "voltage",
+        "data": "380",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "V",
+        "alias": "volt",
+        "supportCurve": true
+      },
+      {
+        "code": "pMaxChar",
+        "data": "5",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kW",
+        "alias": "pw_limit",
+        "supportCurve": true
+      },
+      {
+        "code": "pMaxDischar",
+        "data": "5",
+        "dataType": "NUMERIC",
+        "defaultFlag": true,
+        "hiddenInMore": false,
+        "unit": "kW",
+        "alias": "discharge_limit_pw",
+        "supportCurve": true
+      },
+      {
+        "code": "tempMaxCell",
+        "data": "30",
+        "dataType": "NUMERIC",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "unit": "℃",
+        "alias": "max_cell_temperature",
+        "supportCurve": true
+      },
+      {
+        "code": "tempMinCell",
+        "data": "28",
+        "dataType": "NUMERIC",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "unit": "℃",
+        "alias": "min_cell_temperature",
+        "supportCurve": true
+      },
+      {
+        "code": "vMaxCell",
+        "data": "3300",
+        "dataType": "NUMERIC",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "unit": "mV",
+        "alias": "max_cell_voltage",
+        "supportCurve": true
+      },
+      {
+        "code": "vMinCell",
+        "data": "3290",
+        "dataType": "NUMERIC",
+        "defaultFlag": false,
+        "hiddenInMore": false,
+        "unit": "mV",
+        "alias": "min_cell_voltage",
+        "supportCurve": true
+      }
+    ]
+  }
+]

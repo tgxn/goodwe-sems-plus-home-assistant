@@ -1,0 +1,96 @@
+{
+  "proSelfConsum": 7.0,
+  "proSelfConsumRate": 70.0,
+  "production": 10.0,
+  "proGrid": 3.0,
+  "proGridRate": 30.0,
+  "proConsum": 8.0,
+  "contributionRate": 87.5,
+  "proPurchase": 1.0,
+  "proPurchaseRate": 12.5,
+  "proDiesel": 0,
+  "proDieselRate": 0.0,
+  "proDieselLoad": 0,
+  "proPurchaseLoad": 1.0,
+  "proPvStoreContribution": 7.0,
+  "proAcTotal": 10.0,
+  "dataList": [
+    {
+      "item": "proSystemTotalStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 10.0
+        }
+      ]
+    },
+    {
+      "item": "proConsumStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 8.0
+        }
+      ]
+    },
+    {
+      "item": "proCharStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 4.0
+        }
+      ]
+    },
+    {
+      "item": "proDischarStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 3.0
+        }
+      ]
+    },
+    {
+      "item": "proGridStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 3.0
+        }
+      ]
+    },
+    {
+      "item": "proPurchaseStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 1.0
+        }
+      ]
+    },
+    {
+      "item": "proSelfConsumStats",
+      "unit": "kWh",
+      "statisticsList": [
+        {
+          "date": "2026-09-23",
+          "val": 7.0
+        }
+      ]
+    }
+  ],
+  "metricsTipKeys": [
+    "self_consumption_desc",
+    "export_energy_desc",
+    "pv_storage_supply_desc",
+    "grid_supply_desc"
+  ],
+  "hasProfit": false
+}

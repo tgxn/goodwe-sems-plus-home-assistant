@@ -10,8 +10,13 @@ The integration currently selects the Australian SEMS region by default.
 ## Setup
 
 ```bash
+# create a venv
 python3 -m venv venv
+
+# activate it
 source venv/bin/activate
+
+# install requirements
 pip install -r requirements.local.txt
 
 # create local .env for creds if required
@@ -27,13 +32,7 @@ station is used.
 Start an open-ended capture and stop it with Ctrl+C after about ten minutes:
 
 ```bash
-python scripts/local_api_test.py
-```
-
-For an automatic ten-minute capture:
-
-```bash
-python scripts/local_api_test.py --duration 600
+python scripts/test_api_v2.py
 ```
 
 Messages are printed as they arrive and flushed to disk individually, so a

@@ -1,0 +1,69 @@
+[
+  {
+    "sn": "INV0000000000001",
+    "name": "All-in-One 1",
+    "deviceType": "ENERGY_STORAGE_INTEGRATED_CABINET",
+    "model": "Test Inverter",
+    "status": 5,
+    "addTime": "1767225600000",
+    "zoneId": "UTC",
+    "timespan": 0.0,
+    "snQuery": [
+      "INV0000000000001"
+    ],
+    "brand": "GOODWE",
+    "powerStationType": 2,
+    "subtype": "RESIDENTIAL",
+    "wirelessSignalStrength": "0",
+    "isHems": false
+  },
+  {
+    "sn": "BAT0000000000002",
+    "name": "Battery Rack 2",
+    "deviceType": "BATTERY_RACK",
+    "model": "Test Battery",
+    "status": 5,
+    "addTime": "1767225600000",
+    "zoneId": "UTC",
+    "timespan": 0.0,
+    "snQuery": [
+      "BAT0000000000002"
+    ],
+    "brand": "GOODWE",
+    "powerStationType": 2,
+    "isHems": false
+  },
+  {
+    "sn": "BAT0000000000001",
+    "name": "Battery Rack 1",
+    "deviceType": "BATTERY_RACK",
+    "model": "Test Battery",
+    "status": 5,
+    "addTime": "1767225600000",
+    "zoneId": "UTC",
+    "timespan": 0.0,
+    "snQuery": [
+      "BAT0000000000001"
+    ],
+    "brand": "GOODWE",
+    "powerStationType": 2,
+    "isHems": false
+  },
+  {
+    "sn": "DNG0000000000001",
+    "name": "Dongle 1",
+    "deviceType": "DONGLE",
+    "status": 1,
+    "addTime": "1767225600000",
+    "zoneId": "UTC",
+    "timespan": 0.0,
+    "snQuery": [
+      "DNG0000000000001"
+    ],
+    "brand": "GOODWE",
+    "powerStationType": 2,
+    "wirelessSignalStrength": "0",
+    "communicationMode": "LAN",
+    "isHems": false
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "domain": "sems_plus",
+  "name": "GoodWe SEMS+ Integration",
+  "codeowners": [
+    "@tgxn"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/tgxn/goodwe-sems-home-assistant",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/tgxn/goodwe-sems-home-assistant/issues",
+  "loggers": [
+    "custom_components.sems_plus"
+  ],
+  "requirements": [
+    "aiomqtt==2.5.1"
+  ],
+  "version": "11.0.0"
+}
